@@ -1,5 +1,8 @@
 # secret files
 config.json
+# slurm logs
+*.out
+*.err
 
 # Generated files
 slurm_scripts/*.sh
