@@ -1,3 +1,13 @@
+# secret files
+config.json
+
+# Generated files
+slurm_scripts/*.sh
+
+# Output files
+out/*
+!out/.gitkeep
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
