@@ -3,6 +3,7 @@ config.json
 # slurm logs
 *.out
 *.err
+*.csv
 
 # Generated files
 slurm_scripts/*.sh
