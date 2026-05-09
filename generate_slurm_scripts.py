@@ -33,7 +33,7 @@ def parse_args():
     parser.add_argument("num_jobs", type=int, help="Number of Slurm jobs to generate")
     parser.add_argument(
         "input_dir",
-        help="Root directory containing nested MP3 files to transcribe",
+        help="Root directory containing nested MP3/M4A files to transcribe",
     )
     parser.add_argument(
         "--real-time-factor",
@@ -53,27 +53,27 @@ def load_config(repo_dir):
     return config["email"], config["l4_partition"], config["whisper_root"]
 
 
-def discover_mp3_files(input_dir):
+def discover_audio_files(input_dir):
     discovered = []
     for path in input_dir.rglob("*"):
-        if path.is_file() and path.suffix.lower() == ".mp3":
+        if path.is_file() and path.suffix.lower() in {".mp3", ".m4a"}:
             if path.name.startswith("."):
-                # print(f"Warning: ignoring hidden MP3 file: {path}", file=sys.stderr)
+                # print(f"Warning: ignoring hidden audio file: {path}", file=sys.stderr)
                 continue
             discovered.append(path)
     return sorted(discovered)
 
 
-def output_csv_path(out_dir, input_dir, mp3_path):
-    relative_path = mp3_path.relative_to(input_dir)
+def output_csv_path(out_dir, input_dir, audio_path):
+    relative_path = audio_path.relative_to(input_dir)
     return out_dir / f"{relative_path}.csv"
 
 
 def balance_files(files, num_jobs):
     buckets = [{"files": [], "bytes": 0} for _ in range(num_jobs)]
-    for mp3_path, size_bytes, output_path in sorted(files, key=lambda item: (-item[1], str(item[0]))):
+    for audio_path, size_bytes, output_path, is_m4a_like in sorted(files, key=lambda item: (-item[1], str(item[0]))):
         bucket = min(buckets, key=lambda item: (item["bytes"], len(item["files"])))
-        bucket["files"].append((mp3_path, size_bytes, output_path))
+        bucket["files"].append((audio_path, size_bytes, output_path, is_m4a_like))
         bucket["bytes"] += size_bytes
     return buckets
 
@@ -92,10 +92,26 @@ def parse_duration_to_seconds(duration_text):
     return hours * 3600 + minutes * 60 + seconds
 
 
-def get_mp3_duration_seconds(mp3_path, ffmpeg_bin):
+def classify_audio_codec(codec_name, stderr_text):
+    codec_lower = (codec_name or "").lower()
+    stderr_lower = stderr_text.lower()
+
+    if codec_lower.startswith("mp3"):
+        return False
+    if (
+        codec_lower.startswith("aac")
+        or codec_lower.startswith("alac")
+        or "mp4a" in codec_lower
+        or "m4a" in stderr_lower
+    ):
+        return True
+    return None
+
+
+def probe_audio_file(audio_path, ffmpeg_bin):
     try:
         result = subprocess.run(
-            [ffmpeg_bin, "-i", str(mp3_path)],
+            [ffmpeg_bin, "-i", str(audio_path)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
@@ -106,8 +122,18 @@ def get_mp3_duration_seconds(mp3_path, ffmpeg_bin):
     stderr_text = result.stderr.decode("utf-8", errors="replace")
     duration_match = re.search(r"Duration:\s*(\d+:\d+:\d+(?:\.\d+)?)", stderr_text)
     if not duration_match:
-        return None
-    return parse_duration_to_seconds(duration_match.group(1))
+        return None, None
+
+    duration_seconds = parse_duration_to_seconds(duration_match.group(1))
+    if duration_seconds is None:
+        return None, None
+
+    codec_match = re.search(r"Audio:\s*([^,\s]+)", stderr_text)
+    if not codec_match:
+        return duration_seconds, None
+
+    is_m4a_like = classify_audio_codec(codec_match.group(1), stderr_text)
+    return duration_seconds, is_m4a_like
 
 
 def format_slurm_time(seconds):
@@ -120,8 +146,11 @@ def format_slurm_time(seconds):
 
 def estimate_job_time_limit(job_files, duration_by_path, real_time_factor):
     audio_seconds = 0.0
-    for mp3_path, _size_bytes, _output_path in job_files:
-        audio_seconds += duration_by_path.get(mp3_path, 0.0)
+    for audio_path, _size_bytes, _output_path, is_m4a_like in job_files:
+        duration_seconds = duration_by_path.get(audio_path, 0.0)
+        if is_m4a_like:
+            duration_seconds *= 1.10
+        audio_seconds += duration_seconds
 
     estimated_runtime_seconds = (audio_seconds / real_time_factor) * 1.10
     return format_slurm_time(estimated_runtime_seconds)
@@ -129,19 +158,20 @@ def estimate_job_time_limit(job_files, duration_by_path, real_time_factor):
 
 def build_command_block(job_files, repo_dir, whisper_root):
     if not job_files:
-        return "echo 'No MP3 files assigned to this job.'"
+        return "echo 'No files assigned to this job.'"
 
     lines = [
         f"WHISPER_ROOT={shell_quote(whisper_root)}",
         f"REPO_DIR={shell_quote(repo_dir)}",
+        'FFMPEG_BIN="ffmpeg"',
         'WHISPER_BIN="$WHISPER_ROOT/build/bin/whisper-cli"',
         'WHISPER_MODEL="$WHISPER_ROOT/models/ggml-medium.bin"',
         'cd "$REPO_DIR"',
-        'mp3_files=(',
+        'source_files=(',
     ]
 
-    for mp3_path, _size_bytes, output_path in job_files:
-        lines.append(f"  {shell_quote(mp3_path)}")
+    for audio_path, _size_bytes, _output_path, _is_m4a_like in job_files:
+        lines.append(f"  {shell_quote(audio_path)}")
 
     lines.extend(
         [
@@ -150,30 +180,60 @@ def build_command_block(job_files, repo_dir, whisper_root):
         ]
     )
 
-    for _mp3_path, _size_bytes, output_path in job_files:
+    for _audio_path, _size_bytes, output_path, _is_m4a_like in job_files:
         lines.append(f"  {shell_quote(output_path)}")
 
     lines.extend(
         [
             ")",
-            'for index in "${!mp3_files[@]}"; do',
-            '  source="${mp3_files[$index]}"',
+            "m4a_files=(",
+        ]
+    )
+
+    for audio_path, _size_bytes, _output_path, is_m4a_like in job_files:
+        if is_m4a_like:
+            lines.append(f"  {shell_quote(audio_path)}")
+
+    lines.extend(
+        [
+            ")",
+            'declare -A m4a_map=()',
+            'for m4a_source in "${m4a_files[@]}"; do',
+            '  m4a_map["$m4a_source"]=1',
+            'done',
+            'for index in "${!source_files[@]}"; do',
+            '  source="${source_files[$index]}"',
             '  destination="${output_files[$index]}"',
-            '  source_dir="$(dirname \"$source\")"',
-            '  csv_name="$(basename \"$source\").csv"',
-            '  source_csv="$source_dir/$csv_name"',
             '  mkdir -p "$(dirname \"$destination\")"',
             '  if [ -f "$destination" ]; then',
             '    echo "Skipping existing $destination"',
             '    continue',
             '  fi',
+            '  transcribe_input="$source"',
+            '  temp_wav=""',
+            '  if [[ -n "${m4a_map[$source]+x}" ]]; then',
+            '    temp_wav="$SLURM_TMPDIR/whisper_${SLURM_JOB_ID}_${index}_$(basename "$source").wav"',
+            '    echo "Converting M4A-like input $source -> $temp_wav"',
+            '    "$FFMPEG_BIN" -y -i "$source" -acodec pcm_s16le -ar 16000 -ac 1 "$temp_wav" > /dev/null 2>&1',
+            '    if [ ! -f "$temp_wav" ]; then',
+            '      echo "Failed to create wav for $source"',
+            '      continue',
+            '    fi',
+            '    transcribe_input="$temp_wav"',
+            '  fi',
+            '  source_dir="$(dirname "$transcribe_input")"',
+            '  csv_name="$(basename "$transcribe_input").csv"',
+            '  source_csv="$source_dir/$csv_name"',
             '  echo "Transcribing $source"',
             '  rm -f "$source_csv"',
-            '  "$WHISPER_BIN" --beam-size 1 -ocsv -np --model "$WHISPER_MODEL" "$source" > /dev/null',
+            '  "$WHISPER_BIN" --beam-size 1 -ocsv -np --model "$WHISPER_MODEL" "$transcribe_input" > /dev/null',
             '  if [ -f "$source_csv" ]; then',
             '    mv "$source_csv" "$destination"',
             '  else',
             '    echo "Missing csv output for $source"',
+            '  fi',
+            '  if [ -n "$temp_wav" ]; then',
+            '    rm -f "$temp_wav"',
             '  fi',
             'done',
         ]
@@ -231,33 +291,43 @@ def main():
 
     user_email, l4_part, whisper_root = load_config(repo_dir)
 
-    discovered = discover_mp3_files(input_dir)
+    discovered = discover_audio_files(input_dir)
     pending = []
-    for mp3_path in discovered:
-        output_path = output_csv_path(out_dir, input_dir, mp3_path)
-        pending.append((mp3_path, mp3_path.stat().st_size, output_path))
+    skipped_existing = 0
+    for audio_path in discovered:
+        output_path = output_csv_path(out_dir, input_dir, audio_path)
+        if output_path.exists():
+            skipped_existing += 1
+            continue
+        pending.append((audio_path, audio_path.stat().st_size, output_path))
 
     ffmpeg_bin = shutil.which("ffmpeg")
-    use_estimates = ffmpeg_bin is not None
+    if ffmpeg_bin is None:
+        raise SystemExit("ffmpeg not found in PATH; ffmpeg is required")
+
     duration_by_path = {}
     dropped_unparseable = 0
-
-    if use_estimates:
-        filtered_pending = []
-        for mp3_path, _size_bytes, _output_path in pending:
-            duration_seconds = get_mp3_duration_seconds(mp3_path, ffmpeg_bin)
-            if duration_seconds is None:
-                dropped_unparseable += 1
-                print(
-                    f"Warning: could not parse duration for {mp3_path}; assuming file is corrupted and skipping.",
-                    file=sys.stderr,
-                )
-                continue
-            duration_by_path[mp3_path] = duration_seconds
-            filtered_pending.append((mp3_path, _size_bytes, _output_path))
-        pending = filtered_pending
-    else:
-        print(f"ffmpeg not found in PATH; using default time limit {DEFAULT_TIME_LIMIT}.")
+    dropped_unsupported_codec = 0
+    filtered_pending = []
+    for audio_path, _size_bytes, _output_path in pending:
+        duration_seconds, is_m4a_like = probe_audio_file(audio_path, ffmpeg_bin)
+        if duration_seconds is None:
+            dropped_unparseable += 1
+            print(
+                f"Warning: could not parse duration for {audio_path}; assuming file is corrupted and skipping.",
+                file=sys.stderr,
+            )
+            continue
+        if is_m4a_like is None:
+            dropped_unsupported_codec += 1
+            print(
+                f"Warning: unsupported codec for {audio_path}; expected MP3 or M4A-like audio and skipping.",
+                file=sys.stderr,
+            )
+            continue
+        duration_by_path[audio_path] = duration_seconds
+        filtered_pending.append((audio_path, _size_bytes, _output_path, is_m4a_like))
+    pending = filtered_pending
 
     buckets = balance_files(pending, args.num_jobs)
     name_width = max(2, len(str(args.num_jobs)))
@@ -266,9 +336,7 @@ def main():
         job_name = f"whisper_{index:0{name_width}d}_of_{args.num_jobs:0{name_width}d}"
         script_path = slurm_dir / f"{job_name}.sh"
         command = build_command_block(bucket["files"], repo_dir, whisper_root)
-        time_limit = DEFAULT_TIME_LIMIT
-        if use_estimates:
-            time_limit = estimate_job_time_limit(bucket["files"], duration_by_path, args.real_time_factor)
+        time_limit = estimate_job_time_limit(bucket["files"], duration_by_path, args.real_time_factor)
         script = slurm_template.format(
             time_limit=time_limit,
             name=job_name,
@@ -279,14 +347,18 @@ def main():
         )
         write_code(script_path, script)
 
-    print(f"Discovered MP3 files: {len(discovered)}")
+    print(f"Discovered audio files (.mp3/.m4a): {len(discovered)}")
+    if skipped_existing:
+        print(f"Skipped existing outputs: {skipped_existing}")
     if dropped_unparseable:
         print(f"Dropped as corrupted: {dropped_unparseable}")
+    if dropped_unsupported_codec:
+        print(f"Dropped unsupported codec: {dropped_unsupported_codec}")
     print(f"Queued for generation: {len(pending)}")
-    if use_estimates:
-        print(f"Used ffmpeg durations with real-time-factor={args.real_time_factor} and 10% margin.")
-    else:
-        print(f"Used default time limit: {DEFAULT_TIME_LIMIT}")
+    print(
+        "Used ffmpeg durations with real-time-factor="
+        f"{args.real_time_factor}, 10% M4A conversion penalty, and 10% runtime margin."
+    )
     for index, bucket in enumerate(buckets, start=1):
         print(f"Job {index:0{name_width}d}: {len(bucket['files'])} files, {bucket['bytes']} bytes")
     print(f"Wrote scripts to: {slurm_dir}")
