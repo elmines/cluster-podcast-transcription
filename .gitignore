@@ -1,3 +1,8 @@
+*.txt
+*.mp3
+*.m4a
+*.wav
+
 # secret files
 config.json
 # slurm logs
