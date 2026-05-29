@@ -1,3 +1,4 @@
+.vscode/
 *.txt
 *.mp3
 *.m4a
@@ -14,7 +15,9 @@ config.json
 *.csv
 
 # Generated files
-slurm_scripts/*.sh
+slurm_scripts/**/*.sh
+slurm_scripts/**/*.out
+slurm_scripts/**/*.err
 
 # Output files
 out/*
