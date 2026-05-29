@@ -65,8 +65,14 @@ def discover_audio_files(input_dir):
 
 
 def output_csv_path(out_dir, input_dir, audio_path):
-    relative_path = audio_path.relative_to(input_dir)
-    return out_dir / f"{relative_path}.csv"
+    try:
+        relative_path = audio_path.relative_to(input_dir)
+    except Exception:
+        # Fallback to a safe relative path if audio_path is not a subpath
+        relative_path = Path(os.path.relpath(audio_path, input_dir))
+
+    # Build the output path preserving the input directory structure
+    return out_dir / relative_path.parent / f"{relative_path.name}.csv"
 
 
 def balance_files(files, num_jobs):
