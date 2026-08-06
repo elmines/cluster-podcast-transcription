@@ -20,8 +20,8 @@ slurm_scripts/**/*.out
 slurm_scripts/**/*.err
 
 # Output files
-out/*
-!out/.gitkeep
+transcribe_out/*
+!transcribe_out/.gitkeep
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
