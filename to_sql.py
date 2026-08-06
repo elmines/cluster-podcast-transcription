@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 
+import csv
 import os
 import sqlite3
 import argparse
 import glob
-from itertools import starmap
 
 SHOW_SCHEMA = r"""
 create table if not exists show(
@@ -15,10 +15,11 @@ create table if not exists show(
 
 EPISODE_SCHEMA = r"""
 create table if not exists episode(
-    id integer primary key,
     show_id integer not null,
+    id integer not null,
     title text,
 
+    primary key (show_id, id),
     foreign key(show_id) references show(id)
 )
 """
@@ -26,11 +27,13 @@ create table if not exists episode(
 LINE_SCHEMA = r"""
 create table if not exists line(
     id integer primary key,
+    show_id integer not null,
     episode_id integer not null,
     transcription text,
     start_ms integer,
     stop_ms integer,
 
+    foreign key(show_id) references show(id),
     foreign key(episode_id) references episode(id)
 )
 """
@@ -72,15 +75,24 @@ def main(raw_args=None):
         cursor = con.cursor()
         make_tables(cursor)
 
-        show_insert_stmt = f"INSERT OR IGNORE INTO show(id) VALUES " + ','.join(map(lambda x: f"({x})", show_ids))
-        print(show_insert_stmt)
-        cursor.execute(show_insert_stmt)
+        cursor.executemany(
+            "INSERT INTO show(id) VALUES (?)",
+            [(id,) for id in show_ids]
+        )
 
-        episode_insert_stmt = f"INSERT OR IGNORE INTO episode(id, show_id) VALUES " + ','.join(starmap(lambda id, show_id: f"({id},{show_id})", episode_to_show_ids.items()))
-        print(episode_insert_stmt)
-        cursor.execute(episode_insert_stmt)
+        cursor.executemany(
+            "INSERT INTO episode(id, show_id) VALUES (?, ?)",
+            list(episode_to_show_ids.items())
+        )
 
-        # episode_insert_str = "INSERT INTO episode(id, show_id) VALUES ("
+        for p in csv_paths:
+            show_id, episode_id = extract_show_and_episode(p)
+            with open(p, 'r') as r:
+                csv_rows = list(csv.DictReader(r))
+            cursor.executemany(
+                "INSERT INTO line(show_id, episode_id, transcription, start_ms, stop_ms) VALUES (?,?,?,?,?)",
+                [(show_id, episode_id, row['text'], row['start'], row['end']) for row in csv_rows]
+            )
 
 
 if __name__ == "__main__":
