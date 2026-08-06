@@ -16,7 +16,7 @@ create table if not exists show(
 EPISODE_SCHEMA = r"""
 create table if not exists episode(
     show_id integer not null,
-    id integer not null,
+    id text not null,
     title text,
 
     primary key (show_id, id),
@@ -28,7 +28,7 @@ LINE_SCHEMA = r"""
 create table if not exists line(
     id integer primary key,
     show_id integer not null,
-    episode_id integer not null,
+    episode_id text not null,
     transcription text,
     start_ms integer,
     stop_ms integer,
@@ -44,10 +44,8 @@ def make_tables(cur: sqlite3.Cursor):
     cur.execute(LINE_SCHEMA)
 
 def extract_show_and_episode(p):
-    basename = os.path.basename(p)
-    underscore_split = basename.split("_")
-    show_id    = int(underscore_split[0])
-    episode_id = int(underscore_split[1].split('.')[0])
+    show_id = int(os.path.basename(os.path.dirname(p)))
+    episode_id = os.path.basename(p).split('.')[0]
     return show_id, episode_id
 
 def main(raw_args=None):
@@ -66,7 +64,6 @@ def main(raw_args=None):
     show_episode_ids = []
 
     for show_id, episode_id in map(extract_show_and_episode, csv_paths):
-        print(show_id, episode_id)
         show_ids.add(show_id)
         show_episode_ids.append((show_id, episode_id))
     show_ids = sorted(show_ids)
@@ -87,6 +84,7 @@ def main(raw_args=None):
         )
 
         for p in csv_paths:
+            print(p)
             show_id, episode_id = extract_show_and_episode(p)
             with open(p, 'r') as r:
                 csv_rows = list(csv.DictReader(r))
@@ -94,13 +92,6 @@ def main(raw_args=None):
                 "INSERT INTO line(show_id, episode_id, transcription, start_ms, stop_ms) VALUES (?,?,?,?,?)",
                 [(show_id, episode_id, row['text'], row['start'], row['end']) for row in csv_rows]
             )
-
-        for table_name in ['show', 'episode', 'line']:
-            print(table_name)
-            for doof in cursor.execute("select * from " + table_name):
-                print(doof)
-            input("press enter to continue")
-            print("------------------")
 
 
 if __name__ == "__main__":
