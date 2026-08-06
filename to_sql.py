@@ -63,11 +63,12 @@ def main(raw_args=None):
     csv_paths = glob.glob(patt)
 
     show_ids = set()
-    episode_to_show_ids = dict()
+    show_episode_ids = []
 
     for show_id, episode_id in map(extract_show_and_episode, csv_paths):
+        print(show_id, episode_id)
         show_ids.add(show_id)
-        episode_to_show_ids[episode_id] = show_id
+        show_episode_ids.append((show_id, episode_id))
     show_ids = sorted(show_ids)
 
 
@@ -82,7 +83,7 @@ def main(raw_args=None):
 
         cursor.executemany(
             "INSERT INTO episode(id, show_id) VALUES (?, ?)",
-            list(episode_to_show_ids.items())
+            show_episode_ids
         )
 
         for p in csv_paths:
@@ -93,6 +94,13 @@ def main(raw_args=None):
                 "INSERT INTO line(show_id, episode_id, transcription, start_ms, stop_ms) VALUES (?,?,?,?,?)",
                 [(show_id, episode_id, row['text'], row['start'], row['end']) for row in csv_rows]
             )
+
+        for table_name in ['show', 'episode', 'line']:
+            print(table_name)
+            for doof in cursor.execute("select * from " + table_name):
+                print(doof)
+            input("press enter to continue")
+            print("------------------")
 
 
 if __name__ == "__main__":

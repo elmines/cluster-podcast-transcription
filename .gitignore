@@ -20,6 +20,7 @@ slurm_scripts/**/*.out
 slurm_scripts/**/*.err
 
 # Output files
+*journal
 *.sqlite3
 *.sqlite
 transcribe_out/*
