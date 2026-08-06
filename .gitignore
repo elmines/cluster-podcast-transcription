@@ -20,6 +20,8 @@ slurm_scripts/**/*.out
 slurm_scripts/**/*.err
 
 # Output files
+*.sqlite3
+*.sqlite
 transcribe_out/*
 !transcribe_out/.gitkeep
 
