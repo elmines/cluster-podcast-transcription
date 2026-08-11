@@ -4,4 +4,10 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "huggingface-hub>=1.27.0",
+    "ipykernel>=7.3.0",
+    "torch>=2.13.0",
+    "transformers>=5.15.0",
+    "wtpsplit>=2.2.1",
+]
