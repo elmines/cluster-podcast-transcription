@@ -8,6 +8,8 @@ import glob
 import re
 from typing import Iterable, Any, Generator
 
+from tqdm import tqdm
+
 
 # A question mark, exclamation point, or period (that isn't part of an ellipse), followed by optional quotations, followed by a newline
 SEGMENT_END = re.compile(r"(\?|\!|(?<!\.\.)\.)" + "(\"|\')*$")
@@ -104,7 +106,7 @@ def main(raw_args=None):
         print(f"Invalid strategy {args.strategy}")
 
     in_paths = glob.glob(os.path.join(in_dir, "**", "*.csv"))
-    for in_path in in_paths:
+    for in_path in tqdm(in_paths, desc="Resegmenting files"):
 
         with open(in_path, 'r') as r:
             in_rows = list(csv.DictReader(r))
@@ -113,14 +115,12 @@ def main(raw_args=None):
         out_path = os.path.join(out_dir, os.path.dirname(os.path.relpath(in_path, in_dir)), os.path.basename(in_path))
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         if out_rows:
-            print(f"Writing {out_path}")
             with open(out_path, 'w') as w:
                 writer = csv.DictWriter(w, fieldnames=['start', 'end', 'text'])
                 writer.writeheader()
                 writer.writerows(out_rows)
         else:
             print(f"Warning: No segments for {in_path}", file=sys.stderr)
-        break
 
 if __name__ == "__main__":
     main()
