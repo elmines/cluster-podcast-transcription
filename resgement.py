@@ -115,7 +115,7 @@ def main(raw_args=None):
         if out_rows:
             print(f"Writing {out_path}")
             with open(out_path, 'w') as w:
-                writer = csv.DictWriter(w, fieldnames=list(out_rows[0]))
+                writer = csv.DictWriter(w, fieldnames=['start', 'end', 'text'])
                 writer.writeheader()
                 writer.writerows(out_rows)
         else:
