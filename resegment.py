@@ -55,7 +55,9 @@ def make_model_segment(model_name):
         probs = next(sat.predict_proba([joined_text]))
         bound_inds = np.where(probs > threshold)[0].tolist()
 
-        assert bound_inds
+        if not bound_inds:
+            yield from rows
+            return
 
 
         seg_start = 0
@@ -107,12 +109,12 @@ def main(raw_args=None):
 
     in_paths = glob.glob(os.path.join(in_dir, "**", "*.csv"))
     for in_path in tqdm(in_paths, desc="Resegmenting files"):
+        out_path = os.path.join(out_dir, os.path.dirname(os.path.relpath(in_path, in_dir)), os.path.basename(in_path))
 
         with open(in_path, 'r') as r:
             in_rows = list(csv.DictReader(r))
         out_rows = list(seg_func(in_rows))
 
-        out_path = os.path.join(out_dir, os.path.dirname(os.path.relpath(in_path, in_dir)), os.path.basename(in_path))
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
         if out_rows:
             with open(out_path, 'w') as w:

@@ -19,10 +19,12 @@ slurm_scripts/**/*.sh
 slurm_scripts/**/*.out
 slurm_scripts/**/*.err
 
+
 # Output files
+*.zip
+*.png
 *journal
-*.sqlite3
-*.sqlite
+*sqlite*
 transcribe_out/*
 !transcribe_out/.gitkeep
 
