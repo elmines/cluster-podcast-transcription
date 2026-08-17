@@ -13,4 +13,5 @@ dependencies = [
     "torch>=2.13.0",
     "transformers>=5.15.0",
     "wtpsplit>=2.2.1",
+    "xgrammar>=0.2.3",
 ]
