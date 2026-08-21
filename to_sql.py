@@ -50,8 +50,8 @@ def extract_show_and_episode(p):
 
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description="Convert raw CSV transcriptions of data to SQLite database")
-    parser.add_argument("-i", default="resegment_out", type=os.path.abspath, help="Directory of transcribed CSVS")
-    parser.add_argument("-o", default="podcasts.sqlite", type=os.path.abspath, help="Output path")
+    parser.add_argument("-i", default="out/resegmented", type=os.path.abspath, help="Directory of transcribed CSVS")
+    parser.add_argument("-o", default="out/podcasts.sqlite", type=os.path.abspath, help="Output path")
     args = parser.parse_args(raw_args)
 
     in_path = args.i
