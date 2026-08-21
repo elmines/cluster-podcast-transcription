@@ -12,6 +12,7 @@ dependencies = [
     "kernels<=0.16.0,<0.17.0",
     "nbformat>=5.11.0",
     "plotly>=6.9.0",
+    "sentence-transformers>=6.0.0",
     "torch>=2.13.0",
     "transformers>=5.15.0",
     "wtpsplit>=2.2.1",
