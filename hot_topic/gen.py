@@ -27,31 +27,38 @@ def main(raw_args=None):
     out_path = args.o
 
     model_name = args.model
-    model = AutoModelForCausalLM.from_pretrained(model_name).cuda()
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-    model_context_window = getattr(model.config, "max_position_embeddings", 96000)
     max_new_tokens = 2048
-    max_input = model_context_window - max_new_tokens
 
 
-    file_names = []
-    texts = []
     # Sample one episode from each show
     show_dirs = [d_path for d_path in glob.glob(os.path.join(data_dir, "*")) if os.path.isdir(d_path)]
+    csvs_by_show_dir = {}
     for show_dir in tqdm(show_dirs, desc="Processing shows"):
+        show_file_names = []
         for csv_path in glob.glob(os.path.join(show_dir, "*.csv")):
-            with open(csv_path, 'r') as r:
-                texts.append("".join(row['text'] for row in csv.DictReader(r)))
-            file_names.append(csv_path)
-            # Debug statement
-            break
+            show_file_names.append(csv_path)
+        csvs_by_show_dir[show_dir] = show_file_names
+        
 
+    file_names = []
+    # Round robin allocation of the csv paths
+    while csvs_by_show_dir:
+        for show in show_dirs:
+            if (rem_paths := csvs_by_show_dir.get(show, [])):
+                file_names.append(rem_paths.pop())
+            else:
+                csvs_by_show_dir.pop(show, None)
+
+    file_names = file_names[:200]
+
+    texts = []
+    for csv_path in file_names:
+        with open(csv_path, 'r') as r:
+            texts.append("".join(row['text'] for row in csv.DictReader(r)))
 
     output_pattern = re.compile(r'\[1\] ([a-z ]+) : ([a-z ]+) : (.+)')
-    # output_pattern = re.compile('([a-z ]+) : (.+)')
+    tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer_info = xgr.TokenizerInfo.from_huggingface(tokenizer)
-
     grammar = xgr.GrammarCompiler(tokenizer_info).compile_grammar(r"""
 root ::=  () | entry ("\n" entry){0,2}
 entry ::= "[1] " [a-z][a-z ]{0,29} " : " [a-z][a-z ]{0,255} " : " [^\r\n]{1,512}
@@ -71,9 +78,12 @@ Do not add quote marks to your episode quote.
     set_topics = {t for (t,*_) in orig_topics}
     topic_str = "\n".join( format_topic(name, desc) for name, desc in orig_topics)
 
+    model = AutoModelForCausalLM.from_pretrained(model_name).cuda()
+    model_context_window = getattr(model.config, "max_position_embeddings", 96000)
+    max_input = model_context_window - max_new_tokens
+
     out_rows = []
     text_iter = tqdm(texts, desc="Processing texts")
-    i = 0
     for file_path, text in zip(file_names, text_iter):
         user_prefix = partial_format(GEN_USER_PROMPT, Topics=topic_str)
         tokenized_prompt = tokenized_with_trunc(tokenizer,
@@ -95,9 +105,6 @@ Do not add quote marks to your episode quote.
         if (new_topics := [(t, desc) for (t, desc, *_) in valid_matches if t not in set_topics]):
             set_topics.update(t for t, _ in new_topics)
             topic_str += "\n" + "\n".join(format_topic(name, desc) for name, desc in new_topics)
-        
-        if (i := i + 1) >= 5:
-            break
 
 
     fields = ["episode_file", "topic", "desc", "episode_quote"]
