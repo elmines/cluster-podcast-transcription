@@ -7,7 +7,7 @@ The metascript, [generate_slurm_scripts.py](generate_slurm_scripts.py), scans an
 Example:
 
 ```bash
-python generate_slurm_scripts.py 4 /path/to/nested/mp3s
+python generate_transcription_slurm.py 4 /path/to/nested/mp3s
 ```
 
 Before running the generated jobs, make a [config.json](config.json) that points to your `whisper_root`, Slurm partition, and email address.
@@ -18,6 +18,7 @@ Example `config.json`:
 {
 	"email": "your.name@example.edu",
 	"l4_partition": "your-gpu-partition",
+	"rtx_partition": "your-gpu-partition",
 	"whisper_root": "/absolute/path/to/whisper.cpp"
 }
 ```
