@@ -5,11 +5,13 @@ import csv
 import glob
 import os
 import re
+from collections import OrderedDict
 
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import xgrammar as xgr
 
+from .csv_writer import get_csv_writer
 from .utils import partial_format, tokenized_with_trunc
 from .constants import GEN_USER_PROMPT, DEFAULT_TOPICS
 
@@ -19,16 +21,24 @@ def format_topic(topic_name, topic_desc):
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description="Generate candidate topics")
     parser.add_argument("-i", type=os.path.abspath, default="out/resegmented")
-    parser.add_argument("-o", type=os.path.abspath, default="out/generated_topics.csv")
+    parser.add_argument("--o-quote", type=os.path.abspath, default="out/gen/topic_quotes.csv")
+    parser.add_argument("-o"      , type=os.path.abspath, default="out/gen/topics.csv")
+    parser.add_argument("-n", type=int)
     parser.add_argument("--model", default="meta-llama/Llama-3.1-8B-Instruct")
+    parser.add_argument("--buffer-size", default=8, type=int)
 
     args = parser.parse_args(raw_args)
     data_dir = args.i
-    out_path = args.o
+    topic_path = args.o
+    n = args.n
+    quote_path = args.o_quote
+    buffer_size = args.buffer_size
+    os.makedirs(os.path.dirname(topic_path), exist_ok=True)
+    os.makedirs(os.path.dirname(quote_path), exist_ok=True)
+
 
     model_name = args.model
     max_new_tokens = 2048
-
 
     # Sample one episode from each show
     show_dirs = [d_path for d_path in glob.glob(os.path.join(data_dir, "*")) if os.path.isdir(d_path)]
@@ -49,7 +59,8 @@ def main(raw_args=None):
             else:
                 csvs_by_show_dir.pop(show, None)
 
-    file_names = file_names[:200]
+    if n:
+        file_names = file_names[:n]
 
     texts = []
     for csv_path in file_names:
@@ -75,14 +86,18 @@ Do not add quote marks to your episode quote.
 """
 
     orig_topics = DEFAULT_TOPICS
-    set_topics = {t for (t,*_) in orig_topics}
+    topic_to_desc = OrderedDict(orig_topics)
     topic_str = "\n".join( format_topic(name, desc) for name, desc in orig_topics)
 
     model = AutoModelForCausalLM.from_pretrained(model_name).cuda()
     model_context_window = getattr(model.config, "max_position_embeddings", 96000)
     max_input = model_context_window - max_new_tokens
 
-    out_rows = []
+    write_topics = get_csv_writer(topic_path, ['topic', 'topic_desc'])
+    write_quotes = get_csv_writer(quote_path, ['episode_file', 'topic', 'episode_quote'])
+    buffered_topics = []
+    buffered_quotes = []
+
     text_iter = tqdm(texts, desc="Processing texts")
     for file_path, text in zip(file_names, text_iter):
         user_prefix = partial_format(GEN_USER_PROMPT, Topics=topic_str)
@@ -101,17 +116,18 @@ Do not add quote marks to your episode quote.
         matches = output_pattern.findall(decoded)
         # We ignore quotes that were hallucinated
         valid_matches = [ (topic, desc, quote) for (topic, desc, quote) in matches if quote in text]
-        out_rows.extend((file_path, *match_res) for match_res in valid_matches)
-        if (new_topics := [(t, desc) for (t, desc, *_) in valid_matches if t not in set_topics]):
-            set_topics.update(t for t, _ in new_topics)
+        if (new_topics := [(t, desc) for (t, desc, *_) in valid_matches if t not in topic_to_desc]):
+            topic_to_desc.update(new_topics)
             topic_str += "\n" + "\n".join(format_topic(name, desc) for name, desc in new_topics)
-
-
-    fields = ["episode_file", "topic", "desc", "episode_quote"]
-    with open(out_path, 'w') as w:
-        writer = csv.writer(w)
-        writer.writerow(fields)
-        writer.writerows(out_rows)
+            buffered_topics.extend(new_topics)
+        buffered_quotes.extend((file_path, topic, quote) for (topic, _, quote) in valid_matches)
+        if max(len(buffered_quotes), len(buffered_topics)) >= buffer_size:
+            write_topics(buffered_topics)
+            write_quotes(buffered_quotes)
+            buffered_topics = []
+            buffered_quotes = []
+    write_topics(buffered_topics)
+    write_quotes(buffered_quotes)
 
 if __name__ == "__main__":
     main()
