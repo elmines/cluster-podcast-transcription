@@ -63,7 +63,7 @@ def main(raw_args=None):
         file_names = file_names[:n]
 
     texts = []
-    for csv_path in file_names:
+    for csv_path in tqdm(file_names, desc="Reading texts into memory"):
         with open(csv_path, 'r') as r:
             texts.append("".join(row['text'] for row in csv.DictReader(r)))
 
