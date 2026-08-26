@@ -7,9 +7,22 @@ DEFAULT_TOPICS = \
     ("trade"        , "mentions the exchange of capital, goods, and services")
 ]
 
-GEN_SYSTEM_PROMPT = \
+GEN_GRAMMAR = \
+r"""
+root ::=  () | entry ("\n" entry){0,2}
+entry ::= "[1] " [a-z][a-z ]{0,29} " : " [a-z][a-z ]{0,255} " : " [^\r\n]{1,512}
 """
 
+GEN_SYSTEM_PROMPT = \
+"""
+Answer with one topic per line.
+Use the following format:
+[1] topic : topic desc : episode quote
+
+The topic should be 1 to 30 characters.
+The topic description should be 1 to 256 characters.
+The episode quote should be 1 to 512 characters.
+Do not add quote marks to your episode quote.
 """
 
 

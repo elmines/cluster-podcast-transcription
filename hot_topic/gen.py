@@ -13,7 +13,7 @@ import xgrammar as xgr
 
 from .csv_writer import get_csv_writer
 from .utils import partial_format, tokenized_with_trunc
-from .constants import GEN_USER_PROMPT, DEFAULT_TOPICS
+from .constants import GEN_USER_PROMPT, GEN_SYSTEM_PROMPT, DEFAULT_TOPICS, GEN_GRAMMAR
 
 def format_topic(topic_name, topic_desc):
     return f"{topic_name} : {topic_desc}"
@@ -70,20 +70,8 @@ def main(raw_args=None):
     output_pattern = re.compile(r'\[1\] ([a-z ]+) : ([a-z ]+) : (.+)')
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     tokenizer_info = xgr.TokenizerInfo.from_huggingface(tokenizer)
-    grammar = xgr.GrammarCompiler(tokenizer_info).compile_grammar(r"""
-root ::=  () | entry ("\n" entry){0,2}
-entry ::= "[1] " [a-z][a-z ]{0,29} " : " [a-z][a-z ]{0,255} " : " [^\r\n]{1,512}
-    """)
-    system_prompt = r"""
-Answer with one topic per line.
-Use the following format:
-[1] topic : topic desc : episode quote
-
-The topic should be 1 to 30 characters.
-The topic description should be 1 to 256 characters.
-The episode quote should be 1 to 512 characters.
-Do not add quote marks to your episode quote.
-"""
+    grammar = xgr.GrammarCompiler(tokenizer_info).compile_grammar(GEN_GRAMMAR)
+    system_prompt = GEN_SYSTEM_PROMPT
 
     orig_topics = DEFAULT_TOPICS
     topic_to_desc = OrderedDict(orig_topics)
