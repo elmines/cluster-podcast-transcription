@@ -40,9 +40,9 @@ def main(raw_args=None):
             )
             sim_scores.extend( cosine_similarity(all_embeddings[:len(batch)], all_embeddings[len(batch):]).detach().cpu().tolist() )
     with open(out_path, 'w') as w:
-        writer = csv.DictWriter(w, fieldnames=fieldnames + ['topic_score'])
+        writer = csv.DictWriter(w, fieldnames=fieldnames + ['quote_score'])
         writer.writeheader()
-        writer.writerows([{**row, 'topic_score': score} for row, score in zip(rows, sim_scores)])
+        writer.writerows([{**row, 'quote_score': score} for row, score in zip(rows, sim_scores)])
 
 
 if __name__ == "__main__":
