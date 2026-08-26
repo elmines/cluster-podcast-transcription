@@ -12,8 +12,8 @@ from tqdm import tqdm
 
 def main(raw_args=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("-i", default="out/generated_topics.csv", type=os.path.abspath)
-    parser.add_argument("-o", default="out/scored_topics.csv", type=os.path.abspath)
+    parser.add_argument("-i", default="out/gen/topic_quotes.csv", type=os.path.abspath)
+    parser.add_argument("-o", default="out/gen/scored_topic_quotes.csv", type=os.path.abspath)
     parser.add_argument("--model", default="sentence-transformers/all-MiniLM-L6-v2")
 
     args = parser.parse_args(raw_args)
