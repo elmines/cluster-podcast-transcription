@@ -77,7 +77,7 @@ def main(raw_args=None):
         )
 
         cursor.executemany(
-            "INSERT INTO episode(id, show_id) VALUES (?, ?)",
+            "INSERT INTO episode(show_id, id) VALUES (?, ?)",
             show_episode_ids
         )
 
