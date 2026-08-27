@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import argparse
 import json
 import os
 from pathlib import Path
@@ -8,10 +7,10 @@ import shlex
 import stat
 
 
-GPU_CONFIG = {
-	"l4": ("l4_partition", "l4"),
-	"rtx": ("rtx_partition", "rtx6000"),
-}
+JOBS = [
+	("08:00:00", "meta-llama/Llama-3.2-3B-Instruct"),
+	("20:00:00", "meta-llama/Llama-3.1-8B-Instruct"),
+]
 
 
 def shell_quote(value):
@@ -28,28 +27,19 @@ def write_code(out_path, bash_code):
 	chmodx(out_path)
 
 
-def parse_args():
-	parser = argparse.ArgumentParser(
-		description="Generate a Slurm script for candidate topic generation."
-	)
-	parser.add_argument("--gpu", choices=sorted(GPU_CONFIG), default="rtx", help="GPU kind: l4 or rtx")
-	parser.add_argument("--duration", default="20:00:00", help="Slurm time limit, for example 3:00:00")
-	parser.add_argument("--model", help="Hugging Face model name")
-	return parser.parse_args()
-
-
 def load_config(repo_dir):
 	with (repo_dir / "config.json").open() as handle:
 		return json.load(handle)
 
 
-def build_script(repo_dir, duration, gpu, partition, email, model, output_dir):
+def build_script(repo_dir, duration, partition, email, model, output_dir):
 	topic_output = output_dir / "topics.csv"
 	quote_output = output_dir / "topic_quotes.csv"
-	command = " \\\n\t".join(
+	commands = [
+		" \\\n\t".join(
 		[
-            "uv",
-            "run",
+			"uv",
+			"run",
 			"python",
 			"-m",
 			"hot_topic.gen",
@@ -62,7 +52,37 @@ def build_script(repo_dir, duration, gpu, partition, email, model, output_dir):
 			"--model",
 			shell_quote(model),
 		]
-	)
+		),
+		" \\\n\t".join(
+			[
+				"uv",
+				"run",
+				"python",
+				"-m",
+				"hot_topic.quote_score",
+				"-i",
+				shell_quote(quote_output),
+				"-o",
+				shell_quote(output_dir / "scored_topic_quotes.csv"),
+			]
+		),
+		" \\\n\t".join(
+			[
+				"uv",
+				"run",
+				"python",
+				"-m",
+				"hot_topic.filter",
+				"-i-quotes",
+				shell_quote(output_dir / "scored_topic_quotes.csv"),
+				"-i",
+				shell_quote(topic_output),
+				"-o",
+				shell_quote(output_dir),
+			]
+		),
+	]
+	command_str = "\n".join(commands)
 
 	return f"""#!/bin/bash
 
@@ -87,33 +107,31 @@ cd {shell_quote(repo_dir)}
 pwd
 
 mkdir -p {shell_quote(output_dir)}
-{command}
+{command_str}
 """
 
 
 def main():
-	args = parse_args()
 	repo_dir = Path(__file__).resolve().parent
 	config = load_config(repo_dir)
-	partition_key, gpu_name = GPU_CONFIG[args.gpu]
-	partition = config[partition_key]
-	model_dir_name = args.model.replace("/", "--")
-	output_dir = repo_dir / f"{model_dir_name}-out"
-	script_path = repo_dir / "slurm_scripts" / f"topic_disc_{model_dir_name}.sh"
-	script_path.parent.mkdir(parents=True, exist_ok=True)
+	partition = config["rtx_partition"]
+	for duration, model in JOBS:
+		model_dir_name = model.replace("/", "--")
+		output_dir = repo_dir / f"{model_dir_name}-out"
+		script_path = repo_dir / "slurm_scripts" / f"topic_disc_{model_dir_name}.sh"
+		script_path.parent.mkdir(parents=True, exist_ok=True)
 
-	script = build_script(
-		repo_dir,
-		args.duration,
-		gpu_name,
-		partition,
-		config["email"],
-		args.model,
-		output_dir,
-	)
-	write_code(script_path, script)
-	print(f"Wrote script to: {script_path}")
-	print(f"Output directory: {output_dir}")
+		script = build_script(
+			repo_dir,
+			duration,
+			partition,
+			config["email"],
+			model,
+			output_dir,
+		)
+		write_code(script_path, script)
+		print(f"Wrote script to: {script_path}")
+		print(f"Output directory: {output_dir}")
 
 
 if __name__ == "__main__":
