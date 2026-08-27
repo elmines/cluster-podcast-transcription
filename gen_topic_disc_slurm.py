@@ -48,11 +48,13 @@ def build_script(repo_dir, duration, gpu, partition, email, model, output_dir):
 	quote_output = output_dir / "topic_quotes.csv"
 	command = " \\\n\t".join(
 		[
+            "uv",
+            "run",
 			"python",
 			"-m",
 			"hot_topic.gen",
 			"-i",
-			shell_quote(repo_dir / "resegmented"),
+			shell_quote(repo_dir / "out" / "resegmented"),
 			"-o",
 			shell_quote(topic_output),
 			"--o-quote",
@@ -65,12 +67,12 @@ def build_script(repo_dir, duration, gpu, partition, email, model, output_dir):
 	return f"""#!/bin/bash
 
 #SBATCH --time={shell_quote(duration)}
-#SBATCH --job-name=topic_disc_{shell_quote(model.replace('/', '-'))}
+#SBATCH --job-name=topic_disc_{shell_quote(model.replace('/', '--'))}
 #SBATCH --partition={shell_quote(partition)}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:{gpu}:1
+#SBATCH --gres=gpu:1
 #SBATCH --mem=48gb
 #SBATCH --mail-user={shell_quote(email)}
 #SBATCH --mail-type=BEGIN,FAIL,END
