@@ -49,11 +49,17 @@ def make_tables(cur: sqlite3.Cursor):
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description="Convert raw CSV transcriptions of data to SQLite database")
     parser.add_argument("-i", default="out/resegmented", type=os.path.abspath, help="Directory of transcribed CSVS")
+    parser.add_argument("-f", action="store_true", help="Force overwrite of existing -o file")
     parser.add_argument("-o", default="out/podcasts.sqlite", type=os.path.abspath, help="Output path")
     args = parser.parse_args(raw_args)
 
     in_path = args.i
     out_path = args.o
+    if os.path.exists(out_path):
+        if args.f:
+            os.remove(out_path)
+        else:
+            raise ValueError(f"{out_path} exists. Use -f to force overwrite")
 
     patt = os.path.join(in_path, "**", "*.csv")
     csv_paths = glob.glob(patt)
