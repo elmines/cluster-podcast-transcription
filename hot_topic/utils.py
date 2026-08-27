@@ -1,5 +1,6 @@
-from typing import List, Any
+from typing import List, Any, Tuple
 import sys
+import os
 
 from transformers import PreTrainedTokenizerFast
 
@@ -11,6 +12,11 @@ class PartialFormatDict(dict):
 def partial_format(s, **kwargs):
     return s.format_map(PartialFormatDict(kwargs))
 ###################################################
+
+def extract_show_and_episode(p: os.PathLike) -> Tuple[str, str]:
+    show_id = int(os.path.basename(os.path.dirname(p)))
+    episode_id = os.path.basename(p).split('.')[0]
+    return show_id, episode_id
 
 def tokenized_with_trunc(tokenizer: PreTrainedTokenizerFast,
                          messages: List[Any],

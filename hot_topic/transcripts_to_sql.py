@@ -6,6 +6,8 @@ import sqlite3
 import argparse
 import glob
 
+from .utils import extract_show_and_episode
+
 SHOW_SCHEMA = r"""
 create table if not exists show(
     id   integer primary key,
@@ -43,10 +45,6 @@ def make_tables(cur: sqlite3.Cursor):
     cur.execute(EPISODE_SCHEMA)
     cur.execute(LINE_SCHEMA)
 
-def extract_show_and_episode(p):
-    show_id = int(os.path.basename(os.path.dirname(p)))
-    episode_id = os.path.basename(p).split('.')[0]
-    return show_id, episode_id
 
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description="Convert raw CSV transcriptions of data to SQLite database")
