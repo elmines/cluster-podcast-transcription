@@ -1,6 +1,7 @@
 import argparse
 import os
 from itertools import combinations, batched
+from collections import defaultdict
 import json
 import pdb
 
@@ -9,17 +10,23 @@ import pandas as pd
 
 def filter_by_freq(topics_df: pd.DataFrame, quotes_df: pd.DataFrame, min_freq: int) -> pd.DataFrame:
     topic_counts = quotes_df['topic'].value_counts()
-    mask = topics_df['topic'].apply(lambda t: topic_counts[t] >= min_freq)
-    return topics_df[mask]
+    new_topics_df = topics_df[topics_df['topic'].apply(lambda t: topic_counts[t] >= min_freq)]
+    if (rem_topics := len(topics_df) - len(new_topics_df)):
+        print(f"Filtered out {rem_topics} topics with frequency < {min_freq}")
+        avail_topics = set(new_topics_df['topic'])
+        new_quotes_df = quotes_df[quotes_df['topic'].apply(avail_topics.__contains__)]
+        if (rem_quotes := len(quotes_df) - len(new_quotes_df)):
+            print(f"Filtered out {rem_quotes} quotes for removed topics")
+    else:
+        new_quotes_df = quotes_df
+    return new_topics_df, new_quotes_df
 
 def main(raw_args=None):
     parser = argparse.ArgumentParser()
     parser.add_argument("-i-quotes", default="out/gen/scored_topic_quotes.csv", type=os.path.abspath)
     parser.add_argument("-i", default="out/gen/topics.csv", type=os.path.abspath)
 
-    parser.add_argument("-o", default="out/gen/filtered_topics.csv", type=os.path.abspath)
-    parser.add_argument("-o-quote", default="out/gen/filtered_quotes.csv", type=os.path.abspath)
-    parser.add_argument("-o-merges", default="out/gen/topic_merges.json", type=os.path.abspath)
+    parser.add_argument("-o", default="out/gen/", type=os.path.abspath)
 
     parser.add_argument("--min-freq",
                         type=int,
@@ -52,9 +59,11 @@ def main(raw_args=None):
     args = parser.parse_args(raw_args)
     quotes_path = args.i_quotes
     topics_path = args.i
-    out_topics_path = args.o
-    out_quotes_path = args.o_quote
-    out_merges_path = args.o_merges
+    out_dir = args.o
+    os.makedirs(os.path.dirname(out_dir), exist_ok=True)
+    out_topics_path = os.path.join(out_dir, "filtered_topics.csv")
+    out_quotes_path = os.path.join(out_dir, "filtered_quotes.csv")
+    out_merges_path = os.path.join(out_dir, "topic_merges.json")
     model_name = args.model
     quote_thresh = args.quote_thresh
     redund_thresh = args.redund_thresh
@@ -84,6 +93,12 @@ def main(raw_args=None):
         if (filtered_out := old_len - len(quotes_df)):
             print(f"Filtered out {filtered_out} quotes which fell below the threshold {quote_thresh}")
 
+    # We're not entr
+    old_len = len(quotes_df)
+    quotes_df.drop_duplicates(subset=['episode_file', 'topic'], inplace=True)
+    if (filtered_out := old_len - len(quotes_df)):
+        print(f"Filtered out {filtered_out} quotes that were for the same topic in the same episode")
+
     attributed_topics = set(quotes_df['topic'])
     old_len = len(topics_df)
     topics_df = topics_df[topics_df['topic'].apply(attributed_topics.__contains__)]
@@ -91,10 +106,7 @@ def main(raw_args=None):
         print(f"Filtered out {filtered_out} topics which have no attributable quote")
 
     if (min_freq > 0):
-        old_len = len(topics_df)
-        topics_df = filter_by_freq(topics_df, quotes_df, min_freq)
-        if (filtered_out := old_len - len(topics_df)):
-            print(f"Filtered out {filtered_out} topics with frequency below {min_freq}")
+        topics_df, quotes_df = filter_by_freq(topics_df, quotes_df, min_freq)
 
     # For now doing a crude all-pairs comparison
     if (redund_thresh < 1):
@@ -139,17 +151,19 @@ def main(raw_args=None):
             print(f"Merge: {score:.3f},{topics_by_inds[ind_a]},{topics_by_inds[ind_b]}")
 
 
+        rep_to_members = dict()
         topic_remapping = dict()
         for subset in ds.subsets():
             str_subset = [topics_by_inds[i] for i in subset]
             # Use the shortest topic name as the rep
             simple_name = min(str_subset, key=len)
             topic_remapping.update({s:simple_name for s in str_subset})
+            rep_to_members[simple_name] = str_subset
             if len(str_subset) > 1:
                 print(f"Final set: {str_subset} --> {simple_name}")
 
         with open(out_merges_path, 'w') as w:
-            json.dump(topic_remapping, w, indent=2)
+            json.dump(rep_to_members, w, indent=2)
         print(f"Wrote {out_merges_path}")
 
         reduced_topics = set(topic_remapping.values())
@@ -161,10 +175,7 @@ def main(raw_args=None):
         quotes_df['topic'] = quotes_df['topic'].apply(topic_remapping.__getitem__)
 
     if (min_freq_postmerge > 0):
-        old_len = len(topics_df)
-        topics_df = filter_by_freq(topics_df, quotes_df, min_freq_postmerge)
-        if (filtered_out := old_len - len(topics_df)):
-            print(f"Filtered out {filtered_out} topics with frequency below {min_freq_postmerge}")
+        topics_df, quotes_df = filter_by_freq(topics_df, quotes_df, min_freq_postmerge)
 
     topics_df.to_csv(out_topics_path)
     print(f"Wrote {out_topics_path}")
