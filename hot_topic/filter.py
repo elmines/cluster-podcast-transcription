@@ -43,7 +43,7 @@ def main(raw_args=None):
                         help="Minimum quote quality relevance score to keep the quote. Set to -1 to ignore")
     parser.add_argument("--redund-thresh",
                         type=float,
-                        default=0.5,
+                        default=0.7,
                         help="Minimum cosine similarity to merge redundant topics. Set to 1 to ignore"
     )
     parser.add_argument("--embed-batch-size",
