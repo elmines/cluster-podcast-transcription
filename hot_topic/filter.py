@@ -18,7 +18,7 @@ def main(raw_args=None):
     parser.add_argument("--redund-thresh",
                         type=float,
                         default=0.5,
-                        help="Minimum cosine similarity to merge redundant topics. Set to -1 to ignore"
+                        help="Minimum cosine similarity to merge redundant topics. Set to 1 to ignore"
     )
     parser.add_argument("--embed-batch-size",
                         type=int,
@@ -41,10 +41,16 @@ def main(raw_args=None):
     embed_batch_size = args.embed_batch_size
     sim_batch_size = args.sim_batch_size
 
-    
+    topics_df = pd.read_csv(topics_path)
+    old_len = len(topics_df)
+    topics_df.drop_duplicates(subset='topic', inplace=True)
+    if (filtered_out := old_len - len(topics_df)):
+        print(f"Filtered out {filtered_out} rows corresponding to duplicate topics")
+    topics_df.set_index('topic')
+
+    quotes_df = pd.read_csv(quotes_path)
     if quote_thresh > -1:
         quote_score_col = 'quote_score'
-        quotes_df = pd.read_csv(quotes_path)
         if quote_score_col not in quotes_df.columns:
             raise ValueError(f"{quotes_path} missing {quote_score_col}")
         old_len = len(quotes_df)
@@ -53,14 +59,13 @@ def main(raw_args=None):
             print(f"Filtered out {filtered_out} quotes which fell below the threshold {quote_thresh}")
 
     attributed_topics = set(quotes_df['topic'])
-    topics_df = pd.read_csv(topics_path)
     old_len = len(topics_df)
     topics_df = topics_df[topics_df['topic'].apply(attributed_topics.__contains__)]
     if (filtered_out := old_len - len(topics_df)):
         print(f"Filtered out {filtered_out} topics which have no attributable quote")
 
     # For now doing a crude all-pairs comparison
-    if (redund_thresh > -1):
+    if (redund_thresh < 1):
         from sentence_transformers import SentenceTransformer
         from torch.nn.functional import cosine_similarity
         from scipy.cluster.hierarchy import DisjointSet
