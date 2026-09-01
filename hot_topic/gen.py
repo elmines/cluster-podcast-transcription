@@ -13,7 +13,7 @@ import xgrammar as xgr
 
 from .csv_writer import get_csv_writer
 from .utils import partial_format, tokenized_with_trunc
-from .constants import GEN_USER_PROMPT, GEN_SYSTEM_PROMPT, DEFAULT_TOPICS, GEN_GRAMMAR
+from .constants import GEN_USER_PROMPT, GEN_SYSTEM_PROMPT, DEFAULT_TOPICS, GEN_GRAMMAR, NOISE_PROMPT
 
 def format_topic(topic_name, topic_desc):
     return f"{topic_name} : {topic_desc}"
@@ -88,7 +88,7 @@ def main(raw_args=None):
 
     text_iter = tqdm(texts, desc="Processing texts")
     for file_path, text in zip(file_names, text_iter):
-        user_prefix = partial_format(GEN_USER_PROMPT, Topics=topic_str)
+        user_prefix = partial_format(GEN_USER_PROMPT, Topics=topic_str, Noise=NOISE_PROMPT)
         tokenized_prompt = tokenized_with_trunc(tokenizer,
                                             [{"role": "system", "content": system_prompt}],
                                             user_prefix,
@@ -102,6 +102,7 @@ def main(raw_args=None):
 
         # The quote they give must be from the text itself--avoid hallucinations
         matches = output_pattern.findall(decoded)
+        print(matches)
         # We ignore quotes that were hallucinated
         valid_matches = [ (topic, desc, quote) for (topic, desc, quote) in matches if quote in text]
         if (new_topics := [(t, desc) for (t, desc, *_) in valid_matches if t not in topic_to_desc]):

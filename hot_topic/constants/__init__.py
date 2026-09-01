@@ -1,4 +1,4 @@
-
+from .false_sigs import *
 
 DEFAULT_TOPICS = \
 [
@@ -10,7 +10,7 @@ DEFAULT_TOPICS = \
 GEN_GRAMMAR = \
 r"""
 root ::=  () | entry ("\n" entry){0,2}
-entry ::= "[1] " [a-z][a-z ]{0,29} " : " [a-z][a-z ]{0,255} " : " [^\r\n]{1,512}
+entry ::= "[1] " [a-z][a-z ]{0,29} " : " [a-z][a-z ]{0,255} " : " [^\r\n]{1,256}
 """
 
 GEN_SYSTEM_PROMPT = \
@@ -21,8 +21,9 @@ Use the following format:
 
 The topic should be 1 to 30 characters.
 The topic description should be 1 to 256 characters.
-The episode quote should be 1 to 512 characters.
+The episode quote should be 1 to 256 characters.
 Do not add quote marks to your episode quote.
+Do not give the same topic more than once for the same episode.
 """
 
 
@@ -52,6 +53,11 @@ Amends the Harmonized Tariff Schedule of the United States to suspend temporaril
 
 Your response: 
 [1] trade : mentions the exchange of capital, goods, and services : duty on mixtures containing
+
+Do not quote noise such as music or advertisements as justification for topics.
+Don't even quote text near such noise, as it may be noise as well.
+Here are some examples of such noise:
+{Noise}
 
 [Instructions]
 Step 1: Determine topics mentioned in the document. 
