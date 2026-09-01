@@ -89,22 +89,29 @@ def main(raw_args=None):
     text_iter = tqdm(texts, desc="Processing texts")
     for file_path, text in zip(file_names, text_iter):
         user_prefix = partial_format(GEN_USER_PROMPT, Topics=topic_str, Noise=NOISE_PROMPT)
-        tokenized_prompt = tokenized_with_trunc(tokenizer,
-                                            [{"role": "system", "content": system_prompt}],
-                                            user_prefix,
-                                            text,
-                                            max_input).to(model.device)
-        output = model.generate(**tokenized_prompt,
-                                logits_processor=[xgr.contrib.hf.LogitsProcessor(grammar)],
-                                max_new_tokens=max_new_tokens)
-        input_length = tokenized_prompt['input_ids'].shape[-1]
-        decoded = tokenizer.decode(output[0][input_length:], skip_special_tokens=True)
-
+        tokenized_prompts = tokenized_with_trunc(tokenizer,
+                                               [{"role": "system", "content": system_prompt}],
+                                               user_prefix,
+                                               text,
+                                               max_input)
+        matches = []
+        for tokenized_prompt in tokenized_prompts:
+            prompt = {key: value.to(model.device) for key, value in tokenized_prompt.items()}
+            output = model.generate(**prompt,
+                                    logits_processor=[xgr.contrib.hf.LogitsProcessor(grammar)],
+                                    max_new_tokens=max_new_tokens)
+            input_length = prompt['input_ids'].shape[-1]
+            decoded = tokenizer.decode(output[0][input_length:], skip_special_tokens=True)
+            matches.extend(output_pattern.findall(decoded))
         # The quote they give must be from the text itself--avoid hallucinations
-        matches = output_pattern.findall(decoded)
-        print(matches)
-        # We ignore quotes that were hallucinated
-        valid_matches = [ (topic, desc, quote) for (topic, desc, quote) in matches if quote in text]
+
+        # OrderedDict implicitly handles duplicate topics
+        # We prefer the first mention on the topic (probably has a better quote)
+        # So we use [::-1] to reverse the order they're added to the dictionary...
+        valid_matches = OrderedDict([ (topic, (desc, quote)) for (topic, desc, quote) in matches[::-1] if quote in text])
+        # ... and use reversed() here to get them back in the order the model gave them (if we ever need that)
+        valid_matches = [(k, desc, quote) for k,(desc, quote) in reversed(valid_matches.items())]
+
         if (new_topics := [(t, desc) for (t, desc, *_) in valid_matches if t not in topic_to_desc]):
             topic_to_desc.update(new_topics)
             topic_str += "\n" + "\n".join(format_topic(name, desc) for name, desc in new_topics)

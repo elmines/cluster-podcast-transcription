@@ -23,21 +23,46 @@ def tokenized_with_trunc(tokenizer: PreTrainedTokenizerFast,
                          prompt_template: str,
                          document: str,
                          max_len: int):
+    base_template = messages + [{"role": "user", "content": prompt_template.format(Document="")}]
+    base_prompt = tokenizer.apply_chat_template(
+        base_template,
+        tokenize=True,
+        add_generation_prompt=True,
+        return_tensors='pt'
+    )
+    base_len = base_prompt['input_ids'].shape[-1]
+    # print(f"base_len = {base_len}")
 
-    trunc_document = document
-    while True:
-        prompt = tokenizer.apply_chat_template(
-            messages + [{"role": "user", "content": prompt_template.format(Document=trunc_document)}],
-            tokenize=True,
-            add_generation_prompt=True,
-            return_tensors='pt'
-        )
-        if (excess := prompt['input_ids'].shape[-1] - max_len) > 0:
-            trunc_document = tokenizer.decode(
-                tokenizer.convert_tokens_to_ids(tokenizer.tokenize(document))[:-excess]
+    document_tokens = tokenizer.tokenize(document)
+    # print(f"document_tokens = {len(document_tokens)}")
+    if not document_tokens:
+        return [
+            tokenizer.apply_chat_template(
+                messages + [{"role": "user", "content": prompt_template.format(Document=document)}],
+                tokenize=True,
+                add_generation_prompt=True,
+                return_tensors='pt'
             )
-            if not trunc_document:
-                print("Prompt left no room for document", file=sys.stderr)
-        else:
-            break
-    return prompt
+        ]
+
+    # If the base prompt is already at or above max_len, we still need to split the
+    # document into separate chunks rather than erroring out. In that case, treat the
+    # document chunk size as max_len so every chunk remains a valid standalone prompt.
+    remaining_capacity = max_len - base_len if base_len < max_len else max_len
+    remaining_capacity = max(1, remaining_capacity)
+
+    chunks = []
+    for start in range(0, len(document_tokens), remaining_capacity):
+        chunk_tokens = document_tokens[start:start + remaining_capacity]
+        assert chunk_tokens == document_tokens
+        chunk_document = tokenizer.decode(tokenizer.convert_tokens_to_ids(chunk_tokens))
+        chunks.append(
+            tokenizer.apply_chat_template(
+                messages + [{"role": "user", "content": prompt_template.format(Document=chunk_document)}],
+                tokenize=True,
+                add_generation_prompt=True,
+                return_tensors='pt'
+            )
+        )
+        # print(f"\tchunk = {chunks[-1]['input_ids'].shape}")
+    return chunks
