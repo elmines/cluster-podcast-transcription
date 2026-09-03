@@ -9,7 +9,7 @@ _MUSIC_PATT = re.compile("|".join([
     r"\[.*?MUSIC.*?\]",
     r"\(.*?music\)",
     r"\(singing.*?\)",
-]))
+]), flags=re.IGNORECASE)
 
 _WHITE_PATT = re.compile(r"\s+")
 

@@ -8,8 +8,9 @@ import re
 from collections import OrderedDict
 
 from tqdm import tqdm
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import xgrammar as xgr
+from transformers import AutoTokenizer, AutoConfig
+from vllm import LLM, SamplingParams
+from vllm.sampling_params import StructuredOutputsParams
 
 from .csv_writer import get_csv_writer
 from .utils import partial_format, tokenized_with_trunc, read_transcription_text, preprocess
@@ -38,7 +39,18 @@ def main(raw_args=None):
 
 
     model_name = args.model
-    max_new_tokens = 2048
+    config = AutoConfig.from_pretrained(model_name)
+
+    max_model_len = getattr(config, "max_position_embeddings", 96000)
+    max_num_seqs = 1
+    max_new_tokens = 1024
+    llm = LLM(model=model_name,
+              max_num_seqs=max_num_seqs,
+              max_model_len=max_model_len,
+            # TODO: Find out what I should actually set this to,
+            # so as to not cause an OOM error
+            #   max_num_batched_tokens=max_num_seqs * max_model_len
+              gpu_memory_utilization=0.95)
 
     # Sample one episode from each show
     show_dirs = [d_path for d_path in glob.glob(os.path.join(data_dir, "*")) if os.path.isdir(d_path)]
@@ -68,18 +80,18 @@ def main(raw_args=None):
     texts = [preprocess(t) for t in tqdm(texts, desc="Stripping music markers from transcripts")]
 
     output_pattern = re.compile(r'\[1\] ([a-z ]+) : ([a-z ]+) : (.+)')
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
-    tokenizer_info = xgr.TokenizerInfo.from_huggingface(tokenizer)
-    grammar = xgr.GrammarCompiler(tokenizer_info).compile_grammar(GEN_GRAMMAR)
-    system_prompt = GEN_SYSTEM_PROMPT
+    tokenizer = llm.get_tokenizer()
+    sampling_params = SamplingParams(
+        temperature=0.0,
+        max_tokens=max_new_tokens,
+        structured_outputs=StructuredOutputsParams(grammar=GEN_GRAMMAR),
+    )
 
     orig_topics = DEFAULT_TOPICS
     topic_to_desc = OrderedDict(orig_topics)
     topic_str = "\n".join( format_topic(name, desc) for name, desc in orig_topics)
 
-    model = AutoModelForCausalLM.from_pretrained(model_name).cuda()
-    model_context_window = getattr(model.config, "max_position_embeddings", 96000)
-    max_input = model_context_window - max_new_tokens
+    max_input = max_model_len - max_new_tokens
 
     write_topics = get_csv_writer(topic_path, ['topic', 'topic_desc'])
     write_quotes = get_csv_writer(quote_path, ['episode_file', 'topic', 'episode_quote'])
@@ -90,20 +102,16 @@ def main(raw_args=None):
     for file_path, text in zip(file_names, text_iter):
         user_prefix = partial_format(GEN_USER_PROMPT, Topics=topic_str, Noise=NOISE_PROMPT)
         tokenized_prompts = tokenized_with_trunc(tokenizer,
-                                               [{"role": "system", "content": system_prompt}],
+                                               [{"role": "system", "content": GEN_SYSTEM_PROMPT}],
                                                user_prefix,
                                                text,
                                                max_input)
         matches = []
         for tokenized_prompt in tokenized_prompts:
-            prompt = {key: value.to(model.device) for key, value in tokenized_prompt.items()}
-            output = model.generate(**prompt,
-                                    logits_processor=[xgr.contrib.hf.LogitsProcessor(grammar)],
-                                    max_new_tokens=max_new_tokens)
-            input_length = prompt['input_ids'].shape[-1]
-            decoded = tokenizer.decode(output[0][input_length:], skip_special_tokens=True)
+            prompt = {"prompt_token_ids": tokenized_prompt["input_ids"][0].tolist()}
+            output = llm.generate([prompt], sampling_params, use_tqdm=False)[0]
+            decoded = output.outputs[0].text
             matches.extend(output_pattern.findall(decoded))
-        # The quote they give must be from the text itself--avoid hallucinations
 
         # OrderedDict implicitly handles duplicate topics
         # We prefer the first mention on the topic (probably has a better quote)
@@ -111,7 +119,10 @@ def main(raw_args=None):
         valid_matches = OrderedDict([
             (topic, (desc, quote))
             for (topic, desc, quote) in matches[::-1]
-            if quote.strip() and quote in text # quote.strip() is to verify the quote isn't just whitespace, or an empty string
+
+            # The quote they give must be from the text itself--avoid hallucinations
+            # And it can't just be whitespace (hence quote.strip())
+            if quote.strip() and quote in text 
         ])
         # ... and use reversed() here to get them back in the order the model gave them (if we ever need that)
         valid_matches = [(k, desc, quote) for k,(desc, quote) in reversed(valid_matches.items())]
