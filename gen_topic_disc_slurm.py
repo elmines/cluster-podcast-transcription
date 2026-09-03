@@ -8,8 +8,9 @@ import stat
 
 
 JOBS = [
-	("08:00:00", "meta-llama/Llama-3.2-3B-Instruct"),
-	("20:00:00", "meta-llama/Llama-3.1-8B-Instruct"),
+	("20:00:00", "meta-llama/Llama-3.1-8B-Instruct", "rtx", "gpu:1"),
+	("08:00:00", "meta-llama/Llama-3.2-3B-Instruct", "rtx", "gpu:1"),
+	("20:00:00", "openai/gpt-oss-120b", "b200", "gpu:1"),
 ]
 
 
@@ -32,7 +33,7 @@ def load_config(repo_dir):
 		return json.load(handle)
 
 
-def build_script(repo_dir, duration, partition, email, model, output_dir):
+def build_script(repo_dir, duration, partition, email, model, output_dir, gres):
 	topic_output = output_dir / "topics.csv"
 	quote_output = output_dir / "topic_quotes.csv"
 	commands = [
@@ -92,7 +93,7 @@ def build_script(repo_dir, duration, partition, email, model, output_dir):
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:1
+#SBATCH --gres={shell_quote(gres)}
 #SBATCH --mem=48gb
 #SBATCH --mail-user={shell_quote(email)}
 #SBATCH --mail-type=BEGIN,FAIL,END
@@ -114,8 +115,11 @@ mkdir -p {shell_quote(output_dir)}
 def main():
 	repo_dir = Path(__file__).resolve().parent
 	config = load_config(repo_dir)
-	partition = config["rtx_partition"]
-	for duration, model in JOBS:
+	partitions = {
+		"rtx": config["rtx_partition"],
+		"b200": config["b200_partition"],
+	}
+	for duration, model, partition_name, gres in JOBS:
 		model_dir_name = model.replace("/", "--")
 		output_dir = repo_dir / f"{model_dir_name}-out"
 		script_path = repo_dir / "slurm_scripts" / f"topic_disc_{model_dir_name}.sh"
@@ -124,10 +128,11 @@ def main():
 		script = build_script(
 			repo_dir,
 			duration,
-			partition,
+			partitions[partition_name],
 			config["email"],
 			model,
 			output_dir,
+			gres,
 		)
 		write_code(script_path, script)
 		print(f"Wrote script to: {script_path}")
