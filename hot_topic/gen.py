@@ -12,7 +12,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 import xgrammar as xgr
 
 from .csv_writer import get_csv_writer
-from .utils import partial_format, tokenized_with_trunc
+from .utils import partial_format, tokenized_with_trunc, read_transcription_text, preprocess
 from .constants import GEN_USER_PROMPT, GEN_SYSTEM_PROMPT, DEFAULT_TOPICS, GEN_GRAMMAR, NOISE_PROMPT
 
 def format_topic(topic_name, topic_desc):
@@ -64,8 +64,8 @@ def main(raw_args=None):
 
     texts = []
     for csv_path in tqdm(file_names, desc="Reading texts into memory"):
-        with open(csv_path, 'r') as r:
-            texts.append("".join(row['text'] for row in csv.DictReader(r)))
+        texts.append(read_transcription_text(csv_path))
+    texts = [preprocess(t) for t in tqdm(texts, desc="Stripping music markers from transcripts")]
 
     output_pattern = re.compile(r'\[1\] ([a-z ]+) : ([a-z ]+) : (.+)')
     tokenizer = AutoTokenizer.from_pretrained(model_name)

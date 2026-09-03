@@ -1,9 +1,25 @@
 from typing import List, Any, Tuple
 import csv
-import sys
 import os
+import re
 
 from transformers import PreTrainedTokenizerFast
+
+_MUSIC_PATT = re.compile("|".join([
+    r"\[.*?MUSIC.*?\]",
+    r"\(.*?music\)",
+    r"\(singing.*?\)",
+]))
+
+_WHITE_PATT = re.compile(r"\s+")
+
+def preprocess(s: str) -> str:
+    rval, count = _MUSIC_PATT.subn("", s)
+    print(f"{count} instances of music removed")
+    # Cleans up large blocks of whitespace created by that earlier sub operation
+    rval = _WHITE_PATT.sub(" ", rval)
+    return rval
+
 
 def read_transcription_text(csv_path):
     with open(csv_path, 'r') as r:

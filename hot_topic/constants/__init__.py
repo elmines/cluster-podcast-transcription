@@ -54,7 +54,7 @@ Amends the Harmonized Tariff Schedule of the United States to suspend temporaril
 Your response: 
 [1] trade : mentions the exchange of capital, goods, and services : duty on mixtures containing
 
-Do not quote noise such as music or advertisements as justification for topics.
+Do not quote noise such as music, promotional messages, public service announcements, or advertisements as justification for topics.
 Don't even quote text near such noise, as it may be noise as well.
 Here are some examples of such noise:
 {Noise}
