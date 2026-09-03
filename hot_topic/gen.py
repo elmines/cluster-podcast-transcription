@@ -108,7 +108,11 @@ def main(raw_args=None):
         # OrderedDict implicitly handles duplicate topics
         # We prefer the first mention on the topic (probably has a better quote)
         # So we use [::-1] to reverse the order they're added to the dictionary...
-        valid_matches = OrderedDict([ (topic, (desc, quote)) for (topic, desc, quote) in matches[::-1] if quote in text])
+        valid_matches = OrderedDict([
+            (topic, (desc, quote))
+            for (topic, desc, quote) in matches[::-1]
+            if quote.strip() and quote in text # quote.strip() is to verify the quote isn't just whitespace, or an empty string
+        ])
         # ... and use reversed() here to get them back in the order the model gave them (if we ever need that)
         valid_matches = [(k, desc, quote) for k,(desc, quote) in reversed(valid_matches.items())]
 
