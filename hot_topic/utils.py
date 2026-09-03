@@ -1,8 +1,13 @@
 from typing import List, Any, Tuple
+import csv
 import sys
 import os
 
 from transformers import PreTrainedTokenizerFast
+
+def read_transcription_text(csv_path):
+    with open(csv_path, 'r') as r:
+        return "".join(row['text'] for row in csv.DictReader(r))
 
 ############# From Chat GPT ########################
 class PartialFormatDict(dict):
