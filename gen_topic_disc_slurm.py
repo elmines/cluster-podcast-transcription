@@ -92,7 +92,7 @@ def build_script(repo_dir, duration, partition, email, model, output_dir, gres):
 #SBATCH --partition={shell_quote(partition)}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
+#SBATCH --cpus-per-task=2
 #SBATCH --gres={shell_quote(gres)}
 #SBATCH --mem=48gb
 #SBATCH --mail-user={shell_quote(email)}
@@ -100,6 +100,7 @@ def build_script(repo_dir, duration, partition, email, model, output_dir, gres):
 #SBATCH --output=%x.%j.out
 #SBATCH --error=%x.%j.err
 
+module load cuda/13.0.2 git
 export XDG_RUNTIME_DIR=$SLURM_TMPDIR
 echo CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES
 date
