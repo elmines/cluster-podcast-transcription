@@ -81,11 +81,24 @@ def main(raw_args=None):
 
     output_pattern = re.compile(r'\[1\] ([a-z ]+) : ([a-z ]+) : (.+)')
     tokenizer = llm.get_tokenizer()
-    sampling_params = SamplingParams(
-        temperature=0.0,
-        max_tokens=max_new_tokens,
-        structured_outputs=StructuredOutputsParams(grammar=GEN_GRAMMAR),
-    )
+
+    sampling_kwargs = {
+        "temperature": 0.0,
+        "max_tokens" : max_new_tokens
+    }
+    if 'gpt-oss' in model_name:
+        GPT_SENTINEL = 'assistantfinal'
+        def extract_openai_ans(text):
+            if ((index := text.rfind(GPT_SENTINEL)) == -1):
+                return ''
+            return text[index + len(GPT_SENTINEL):]
+        extract_ans = extract_openai_ans
+    else:
+        extract_ans = lambda x: x
+
+    if 'llama' in model_name:
+        sampling_kwargs['structured_outputs'] = StructuredOutputsParams(grammar=GEN_GRAMMAR)
+    sampling_params = SamplingParams(**sampling_kwargs)
 
     orig_topics = DEFAULT_TOPICS
     topic_to_desc = OrderedDict(orig_topics)
@@ -95,7 +108,7 @@ def main(raw_args=None):
 
     write_topics = get_csv_writer(topic_path, ['topic', 'topic_desc'])
     write_quotes = get_csv_writer(quote_path, ['episode_file', 'topic', 'episode_quote'])
-    buffered_topics = []
+    buffered_topics = [] + orig_topics
     buffered_quotes = []
 
     text_iter = tqdm(texts, desc="Processing texts")
@@ -111,6 +124,7 @@ def main(raw_args=None):
             prompt = {"prompt_token_ids": tokenized_prompt["input_ids"][0].tolist()}
             output = llm.generate([prompt], sampling_params, use_tqdm=False)[0]
             decoded = output.outputs[0].text
+            decoded = extract_ans(decoded)
             matches.extend(output_pattern.findall(decoded))
 
         # OrderedDict implicitly handles duplicate topics
