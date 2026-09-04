@@ -15,7 +15,7 @@ _WHITE_PATT = re.compile(r"\s+")
 
 def preprocess(s: str) -> str:
     rval, count = _MUSIC_PATT.subn("", s)
-    print(f"{count} instances of music removed")
+    # print(f"{count} instances of music removed")
     # Cleans up large blocks of whitespace created by that earlier sub operation
     rval = _WHITE_PATT.sub(" ", rval)
     return rval
