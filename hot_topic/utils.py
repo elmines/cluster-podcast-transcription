@@ -3,6 +3,7 @@ import csv
 import os
 import re
 
+import pandas as pd
 from transformers import PreTrainedTokenizerFast
 
 _MUSIC_PATT = re.compile("|".join([
@@ -12,6 +13,16 @@ _MUSIC_PATT = re.compile("|".join([
 ]), flags=re.IGNORECASE)
 
 _WHITE_PATT = re.compile(r"\s+")
+
+def extract_quote_context(row: pd.Series,
+                          left_context_size=4096,
+                          right_context_size=4096):
+    quote_text = row['episode_quote']
+    text = read_transcription_text(row['episode_file'])
+    index = text.index(quote_text)
+    left_context = text[max(0, index - left_context_size):index]
+    right_context = text[index + len(text):index + len(text) + right_context_size]
+    return left_context + f"<document>{quote_text}</document>" + right_context
 
 def preprocess(s: str) -> str:
     rval, count = _MUSIC_PATT.subn("", s)
