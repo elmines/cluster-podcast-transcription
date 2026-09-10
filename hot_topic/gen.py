@@ -166,7 +166,7 @@ def main(raw_args=None):
         valid_matches = OrderedDict([
             (topic, (desc, quote))
             for topic, desc, raw_quote in matches[::-1]
-            if (quote := align_quote(text, raw_quote, minimum_overlap))
+            if (quote := align_quote(raw_quote, text, minimum_overlap))
         ])
         # ... and use reversed() here to get them back in the order the model gave them (if we ever need that)
         valid_matches = [(k, desc, quote) for k,(desc, quote) in reversed(valid_matches.items())]
