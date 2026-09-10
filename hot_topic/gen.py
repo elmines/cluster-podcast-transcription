@@ -13,7 +13,7 @@ from vllm import LLM, SamplingParams
 from vllm.sampling_params import StructuredOutputsParams
 
 from .csv_writer import get_csv_writer
-from .utils import partial_format, tokenized_with_trunc, preprocess, combine_rows
+from .utils import partial_format, tokenized_with_trunc, preprocess, combine_rows, normalize_model_name
 from .constants import GEN_USER_PROMPT, GEN_SYSTEM_PROMPT, DEFAULT_TOPICS, GEN_GRAMMAR, NOISE_PROMPT
 
 def format_topic(topic_name, topic_desc):
@@ -22,20 +22,19 @@ def format_topic(topic_name, topic_desc):
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description="Generate candidate topics")
     parser.add_argument("-i", type=os.path.abspath, default="out/resegmented")
-    parser.add_argument("--o-quote", type=os.path.abspath, default="out/gen/topic_quotes.csv")
-    parser.add_argument("-o"      , type=os.path.abspath, default="out/gen/topics.csv")
+    parser.add_argument("-o", type=os.path.abspath)
     parser.add_argument("-n", type=int)
     parser.add_argument("--model", default="meta-llama/Llama-3.1-8B-Instruct")
     parser.add_argument("--buffer-size", default=8, type=int)
 
     args = parser.parse_args(raw_args)
     data_dir = args.i
-    topic_path = args.o
+    output_dir = args.o or os.path.abspath(os.path.join("out", f"gen--{normalize_model_name(args.model)}"))
+    topic_path = os.path.join(output_dir, "topics.csv")
+    quote_path = os.path.join(output_dir, "topic_quotes.csv")
     n = args.n
-    quote_path = args.o_quote
     buffer_size = args.buffer_size
-    os.makedirs(os.path.dirname(topic_path), exist_ok=True)
-    os.makedirs(os.path.dirname(quote_path), exist_ok=True)
+    os.makedirs(output_dir, exist_ok=True)
 
 
     model_name = args.model
@@ -116,7 +115,7 @@ def main(raw_args=None):
     write_topics = lambda rows: raw_write_topics([model_name] + r for r in rows)
     write_quotes = lambda rows: raw_write_quotes([model_name] + r for r in rows)
 
-    buffered_topics = [] + orig_topics
+    buffered_topics = [list(tup) for tup in orig_topics]
     buffered_quotes = []
 
     text_iter = tqdm(texts, desc="Processing texts")
@@ -149,11 +148,11 @@ def main(raw_args=None):
         # ... and use reversed() here to get them back in the order the model gave them (if we ever need that)
         valid_matches = [(k, desc, quote) for k,(desc, quote) in reversed(valid_matches.items())]
 
-        if (new_topics := [(t, desc) for (t, desc, *_) in valid_matches if t not in topic_to_desc]):
+        if (new_topics := [[t, desc] for (t, desc, *_) in valid_matches if t not in topic_to_desc]):
             topic_to_desc.update(new_topics)
             topic_str += "\n" + "\n".join(format_topic(name, desc) for name, desc in new_topics)
             buffered_topics.extend(new_topics)
-        buffered_quotes.extend((file_path, topic, quote) for (topic, _, quote) in valid_matches)
+        buffered_quotes.extend([file_path, topic, quote] for (topic, _, quote) in valid_matches)
         if max(len(buffered_quotes), len(buffered_topics)) >= buffer_size:
             write_topics(buffered_topics)
             write_quotes(buffered_quotes)

@@ -23,7 +23,7 @@ _MUSIC_PATT = re.compile("|".join([
     r"\(singing.*?\)",
 ]), flags=re.IGNORECASE)
 
-_WHITE_PATT = re.compile(r"\s+")
+WHITE_PATT = re.compile(r"\s+")
 
 def normalize_model_name(model_name: str) -> str:
     return model_name.replace("/", "--")
@@ -47,25 +47,12 @@ def preprocess(rows: Iterable[Dict[str, Any]]) -> Generator[Dict[str, Any], None
     # TODO: Use a joint regex for both of these?
     # Would speed things up
     # Eliminate rows with music
-
-    rows = list(rows)
-    old_len = len(rows)
-
     rows = filter(lambda row: not _MUSIC_PATT.search(row['text']), rows)
     # Eliminate rows with ads
-
-    rows = list(rows)
-    print(f"{old_len - len(rows)} removed for music")
-    old_len = len(rows)
-
     rows = filter(lambda row: not AD_PATTERN.search(row['text']), rows)
-
-    rows = list(rows)
-    print(f"{old_len - len(rows)} removed for ads")
-
     # Clean up large blocks of whitespace created by any earlier subs
     # Probably not needed right now
-    rows = map_key(lambda text: _WHITE_PATT.sub(" ", text), "text", rows)
+    rows = map_key(lambda text: WHITE_PATT.sub(" ", text), "text", rows)
 
     yield from rows
 
