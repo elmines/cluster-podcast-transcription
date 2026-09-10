@@ -8,12 +8,12 @@ import re
 from collections import OrderedDict
 
 from tqdm import tqdm
-from transformers import AutoTokenizer, AutoConfig
+from transformers import AutoConfig
 from vllm import LLM, SamplingParams
 from vllm.sampling_params import StructuredOutputsParams
 
 from .csv_writer import get_csv_writer
-from .utils import partial_format, tokenized_with_trunc, read_transcription_text, preprocess
+from .utils import partial_format, tokenized_with_trunc, preprocess, combine_rows
 from .constants import GEN_USER_PROMPT, GEN_SYSTEM_PROMPT, DEFAULT_TOPICS, GEN_GRAMMAR, NOISE_PROMPT
 
 def format_topic(topic_name, topic_desc):
@@ -74,10 +74,15 @@ def main(raw_args=None):
     if n:
         file_names = file_names[:n]
 
-    texts = []
-    for csv_path in tqdm(file_names, desc="Reading texts into memory"):
-        texts.append(read_transcription_text(csv_path))
-    texts = [preprocess(t) for t in tqdm(texts, desc="Stripping music markers from transcripts")]
+    raw_rows = []
+    for csv_path in tqdm(file_names, desc="Reading transcripts into memory"):
+        with open(csv_path, 'r') as r:
+            raw_rows.append( list(csv.DictReader(r)) )
+
+    texts = [
+        combine_rows(preprocess(row_set)) for row_set in tqdm(raw_rows, desc="Preprocessing transcripts")
+    ]
+    raw_rows = None # Free up memory
 
     output_pattern = re.compile(r'\[1\] ([a-z ]+) : ([a-z ]+) : (.+)')
     tokenizer = llm.get_tokenizer()

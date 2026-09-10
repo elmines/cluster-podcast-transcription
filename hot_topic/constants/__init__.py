@@ -1,3 +1,5 @@
+import re
+
 from .false_sigs import *
 
 DEFAULT_TOPICS = \
@@ -6,6 +8,33 @@ DEFAULT_TOPICS = \
     ("entertainment", "mentions movies, TV shows, video games, books, or related media"),
     ("trade"        , "mentions the exchange of capital, goods, and services")
 ]
+
+_AD_WORDS = [
+    r"\.com",
+    r"\.edu",
+    "Rasmussen University",
+    "Arizona State University",
+    "US Bank Business Essential",
+    "Alpha Insurance",
+    "Hartford",
+    "OnDeck",
+    "American Airlines Advantage Business Program",
+    "Davis Gainesville Chevrolet GMC",
+    "Grainger",
+    "Kalshi",
+    "Vanta ",
+    "V Pizza",
+    "Coke Florida",
+    "Burrito Factory",
+    "American Express Business Gold Card",
+    "Spurrier's Grit-Iron Grill in Gainesville",
+]
+
+AD_PATTERN = re.compile(
+    '|'.join(w for w in _AD_WORDS)
+)
+
+AD_REPL_STR = ""
 
 GEN_GRAMMAR = \
 r"""

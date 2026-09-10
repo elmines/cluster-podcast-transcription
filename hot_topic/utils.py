@@ -1,10 +1,21 @@
-from typing import List, Any, Tuple
+from typing import List, Any, Tuple, Dict, Iterable, Generator, Callable
+from operator import itemgetter
 import csv
 import os
 import re
 
 import pandas as pd
 from transformers import PreTrainedTokenizerFast
+
+from .constants import AD_PATTERN
+
+def map_key(map_func, k, dicts):
+    def wrapped_map_func(d):
+        return {
+            k2 : map_func(v) if k2 == k else v
+            for k2,v in d.items()
+        }
+    return map(wrapped_map_func, dicts)
 
 _MUSIC_PATT = re.compile("|".join([
     r"\[.*?MUSIC.*?\]",
@@ -24,17 +35,37 @@ def extract_quote_context(row: pd.Series,
     right_context = text[index + len(text):index + len(text) + right_context_size]
     return left_context + f"<document>{quote_text}</document>" + right_context
 
-def preprocess(s: str) -> str:
-    rval, count = _MUSIC_PATT.subn("", s)
-    # print(f"{count} instances of music removed")
-    # Cleans up large blocks of whitespace created by that earlier sub operation
-    rval = _WHITE_PATT.sub(" ", rval)
-    return rval
 
 
-def read_transcription_text(csv_path):
-    with open(csv_path, 'r') as r:
-        return "".join(row['text'] for row in csv.DictReader(r))
+def preprocess(rows: Iterable[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
+
+    # TODO: Use a joint regex for both of these?
+    # Would speed things up
+    # Eliminate rows with music
+
+    rows = list(rows)
+    old_len = len(rows)
+
+    rows = filter(lambda row: not _MUSIC_PATT.search(row['text']), rows)
+    # Eliminate rows with ads
+
+    rows = list(rows)
+    print(f"{old_len - len(rows)} removed for music")
+    old_len = len(rows)
+
+    rows = filter(lambda row: not AD_PATTERN.search(row['text']), rows)
+
+    rows = list(rows)
+    print(f"{old_len - len(rows)} removed for ads")
+
+    # Clean up large blocks of whitespace created by any earlier subs
+    # Probably not needed right now
+    rows = map_key(lambda text: _WHITE_PATT.sub(" ", text), "text", rows)
+
+    yield from rows
+
+def combine_rows(rows: Iterable[Dict[str, Any]]) -> str:
+    return "".join(map(itemgetter('text'), rows))
 
 ############# From Chat GPT ########################
 class PartialFormatDict(dict):
