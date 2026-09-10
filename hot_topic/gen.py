@@ -17,7 +17,7 @@ from .utils import partial_format, tokenized_with_trunc, preprocess, combine_row
 from .constants import GEN_USER_PROMPT, GEN_SYSTEM_PROMPT, DEFAULT_TOPICS, GEN_GRAMMAR, NOISE_PROMPT
 
 def format_topic(topic_name, topic_desc):
-    return f"{topic_name} : {topic_desc}"
+    return f"[1] {topic_name} : {topic_desc}"
 
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description="Generate candidate topics")
@@ -83,7 +83,7 @@ def main(raw_args=None):
     ]
     raw_rows = None # Free up memory
 
-    output_pattern = re.compile(r'\[1\] ([a-z ]+) : ([a-z ]+) : (.+)')
+    output_pattern = re.compile(r"\[1\] ([^:]+) : ([^:]+) : (.+)")
     tokenizer = llm.get_tokenizer()
 
     sampling_kwargs = {
@@ -100,7 +100,7 @@ def main(raw_args=None):
     else:
         extract_ans = lambda x: x
 
-    if 'llama' in model_name:
+    if "llama" in model_name or 'gemma' in model_name:
         sampling_kwargs['structured_outputs'] = StructuredOutputsParams(grammar=GEN_GRAMMAR)
     sampling_params = SamplingParams(**sampling_kwargs)
 

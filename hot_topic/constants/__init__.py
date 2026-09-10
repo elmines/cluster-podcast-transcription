@@ -48,13 +48,13 @@ Answer with one topic per line.
 Use the following format:
 [1] topic : topic desc : episode quote
 
+Do not increment the [1] marker. Even if you output multiple topics, prefix each one with [1].
 The topic should be 1 to 30 characters.
 The topic description should be 1 to 256 characters.
 The episode quote should be 1 to 256 characters.
 Do not add quote marks to your episode quote.
 Do not give the same topic more than once for the same episode.
 """
-
 
 # Modifed from TopicGPT's original generation prompt
 GEN_USER_PROMPT = \
