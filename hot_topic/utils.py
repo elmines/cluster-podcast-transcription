@@ -1,10 +1,11 @@
-from typing import List, Any, Tuple, Dict, Iterable, Generator, Callable
+from typing import List, Any, Tuple, Dict, Iterable, Generator, Callable, Optional
 from operator import itemgetter
 import csv
 import os
 import re
 
 import pandas as pd
+from rapidfuzz.fuzz import partial_ratio_alignment
 from transformers import PreTrainedTokenizerFast
 
 from .constants import AD_PATTERN
@@ -27,6 +28,24 @@ WHITE_PATT = re.compile(r"\s+")
 
 def normalize_model_name(model_name: str) -> str:
     return model_name.replace("/", "--")
+
+
+def align_quote(quote: str, text: str, minimum_overlap: float) -> Optional[str]:
+    quote = quote.strip()
+    if not quote:
+        return
+
+    alignment = partial_ratio_alignment(
+        quote,
+        text,
+        score_cutoff=minimum_overlap,
+    )
+    if alignment is None:
+        return None
+    substr = text[alignment.dest_start:alignment.dest_end].strip()
+    if not substr:
+        return None
+    return substr
 
 
 def extract_quote_context(row: pd.Series,

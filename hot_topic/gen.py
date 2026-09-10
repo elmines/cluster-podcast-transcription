@@ -17,7 +17,7 @@ from xgrammar import get_model_structural_tag
 from xgrammar.structural_tag import GrammarFormat
 
 from .csv_writer import get_csv_writer
-from .utils import partial_format, tokenized_with_trunc, preprocess, combine_rows, normalize_model_name
+from .utils import align_quote, partial_format, tokenized_with_trunc, preprocess, combine_rows, normalize_model_name
 from .constants import GEN_USER_PROMPT, GEN_SYSTEM_PROMPT, DEFAULT_TOPICS, GEN_GRAMMAR, NOISE_PROMPT
 
 def format_topic(topic_name, topic_desc):
@@ -30,6 +30,8 @@ def main(raw_args=None):
     parser.add_argument("-n", type=int)
     parser.add_argument("--model", default="meta-llama/Llama-3.1-8B-Instruct")
     parser.add_argument("--buffer-size", default=8, type=int)
+    parser.add_argument("--minimum-overlap", default=0.95, type=float,
+                        help="Minimum quote overlap score from 0 to 1")
 
     args = parser.parse_args(raw_args)
     data_dir = args.i
@@ -38,6 +40,10 @@ def main(raw_args=None):
     quote_path = os.path.join(output_dir, "topic_quotes.csv")
     n = args.n
     buffer_size = args.buffer_size
+    minimum_overlap = args.minimum_overlap
+    if not 0 <= minimum_overlap <= 1:
+        parser.error("--minimum-overlap must be between 0 and 1")
+    minimum_overlap *= 100
     os.makedirs(output_dir, exist_ok=True)
 
 
@@ -159,11 +165,8 @@ def main(raw_args=None):
         # So we use [::-1] to reverse the order they're added to the dictionary...
         valid_matches = OrderedDict([
             (topic, (desc, quote))
-            for (topic, desc, quote) in matches[::-1]
-
-            # The quote they give must be from the text itself--avoid hallucinations
-            # And it can't just be whitespace (hence quote.strip())
-            if quote.strip() and quote in text 
+            for topic, desc, raw_quote in matches[::-1]
+            if (quote := align_quote(text, raw_quote, minimum_overlap))
         ])
         # ... and use reversed() here to get them back in the order the model gave them (if we ever need that)
         valid_matches = [(k, desc, quote) for k,(desc, quote) in reversed(valid_matches.items())]

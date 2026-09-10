@@ -28,7 +28,9 @@ _AD_WORDS = [
     "Burrito Factory",
     "American Express Business Gold Card",
     "Spurrier's Grit-Iron Grill in Gainesville",
-    "Original American Kitchen"
+    "Original American Kitchen",
+    "ACAS powers",
+    "Hey Gainesville"
 ]
 
 AD_PATTERN = re.compile(
