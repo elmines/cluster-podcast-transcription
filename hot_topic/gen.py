@@ -50,7 +50,7 @@ def main(raw_args=None):
     model_name = args.model
     config = AutoConfig.from_pretrained(model_name)
 
-    max_model_len = getattr(config, "max_position_embeddings", 96000)
+    max_model_len = min( getattr(config, "max_position_embeddings", 96000), 96000 )
     max_num_seqs = 1
     max_new_tokens = 1024
     llm = LLM(model=model_name,

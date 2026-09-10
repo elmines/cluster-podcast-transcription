@@ -8,9 +8,9 @@ import stat
 
 
 JOBS = [
-	("20:00:00", "meta-llama/Llama-3.1-8B-Instruct", "rtx", "gpu:1"),
-	("08:00:00", "meta-llama/Llama-3.2-3B-Instruct", "rtx", "gpu:1"),
-	("20:00:00", "openai/gpt-oss-120b", "b200", "gpu:1"),
+	("14:00:00", "meta-llama/Llama-3.3-70B-Instruct", "b200", "gpu:1"),
+	("20:00:00", "openai/gpt-oss-120b"              , "b200", "gpu:1"),
+	("20:00:00", "google/gemma-4-31B-it"            , "b200", "gpu:1"),
 ]
 
 
@@ -33,9 +33,7 @@ def load_config(repo_dir):
 		return json.load(handle)
 
 
-def build_script(repo_dir, duration, partition, email, model, output_dir, gres):
-	topic_output = output_dir / "topics.csv"
-	quote_output = output_dir / "topic_quotes.csv"
+def build_script(repo_dir, duration, partition, email, model, gres):
 	commands = [
 		" \\\n\t".join(
 		[
@@ -46,41 +44,9 @@ def build_script(repo_dir, duration, partition, email, model, output_dir, gres):
 			"hot_topic.gen",
 			"-i",
 			shell_quote(repo_dir / "out" / "resegmented"),
-			"-o",
-			shell_quote(topic_output),
-			"--o-quote",
-			shell_quote(quote_output),
 			"--model",
 			shell_quote(model),
 		]
-		),
-		" \\\n\t".join(
-			[
-				"uv",
-				"run",
-				"python",
-				"-m",
-				"hot_topic.quote_score",
-				"-i",
-				shell_quote(quote_output),
-				"-o",
-				shell_quote(output_dir / "scored_topic_quotes.csv"),
-			]
-		),
-		" \\\n\t".join(
-			[
-				"uv",
-				"run",
-				"python",
-				"-m",
-				"hot_topic.filter",
-				"-i-quotes",
-				shell_quote(output_dir / "scored_topic_quotes.csv"),
-				"-i",
-				shell_quote(topic_output),
-				"-o",
-				shell_quote(output_dir),
-			]
 		),
 	]
 	command_str = "\n".join(commands)
@@ -108,7 +74,6 @@ hostname
 cd {shell_quote(repo_dir)}
 pwd
 
-mkdir -p {shell_quote(output_dir)}
 {command_str}
 """
 
@@ -122,7 +87,6 @@ def main():
 	}
 	for duration, model, partition_name, gres in JOBS:
 		model_dir_name = model.replace("/", "--")
-		output_dir = repo_dir / f"{model_dir_name}-out"
 		script_path = repo_dir / "slurm_scripts" / f"topic_disc_{model_dir_name}.sh"
 		script_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -132,12 +96,10 @@ def main():
 			partitions[partition_name],
 			config["email"],
 			model,
-			output_dir,
 			gres,
 		)
 		write_code(script_path, script)
 		print(f"Wrote script to: {script_path}")
-		print(f"Output directory: {output_dir}")
 
 
 if __name__ == "__main__":
