@@ -28,6 +28,7 @@ _AD_WORDS = [
     "Burrito Factory",
     "American Express Business Gold Card",
     "Spurrier's Grit-Iron Grill in Gainesville",
+    "Original American Kitchen"
 ]
 
 AD_PATTERN = re.compile(
@@ -39,7 +40,7 @@ AD_REPL_STR = ""
 GEN_GRAMMAR = \
 r"""
 root ::=  () | entry ("\n" entry){0,2}
-entry ::= "[1] " [a-z][a-z ]{0,29} " : " [a-z][a-z ]{0,255} " : " [^\r\n]{1,256}
+entry ::= "[1] " [^:\r\n]{1,30} " : " [^:\r\n]{1,256} " : " [^\r\n]{1,256}
 """
 
 GEN_SYSTEM_PROMPT = \

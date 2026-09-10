@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
+import copy
+import json
 import csv
 import glob
 import os
@@ -11,6 +13,8 @@ from tqdm import tqdm
 from transformers import AutoConfig
 from vllm import LLM, SamplingParams
 from vllm.sampling_params import StructuredOutputsParams
+from xgrammar import get_model_structural_tag
+from xgrammar.structural_tag import GrammarFormat
 
 from .csv_writer import get_csv_writer
 from .utils import partial_format, tokenized_with_trunc, preprocess, combine_rows, normalize_model_name
@@ -83,7 +87,7 @@ def main(raw_args=None):
     ]
     raw_rows = None # Free up memory
 
-    output_pattern = re.compile(r"\[1\] ([^:]+) : ([^:]+) : (.+)")
+    output_pattern = re.compile(r"\[1\] ([^:\r\n]+) : ([^:\r\n]+) : ([^\r\n]+)")
     tokenizer = llm.get_tokenizer()
 
     sampling_kwargs = {
@@ -102,6 +106,22 @@ def main(raw_args=None):
 
     if "llama" in model_name or 'gemma' in model_name:
         sampling_kwargs['structured_outputs'] = StructuredOutputsParams(grammar=GEN_GRAMMAR)
+    elif 'gpt-oss' in model_name:
+        # Have to make an expanded grammar that supports the Harmony format
+        structural_tag = get_model_structural_tag(
+            "harmony",
+            tools=[],
+            tool_choice="none",
+            reasoning=True,
+        )
+        structural_tag = copy.deepcopy(structural_tag)
+        fmt_object = GrammarFormat(grammar=GEN_GRAMMAR)
+        for tag in structural_tag.format.tags:
+            # Only care about constraining the final answer
+            if tag.begin == '<|channel|>final<|message|>':
+                tag.content = fmt_object
+        sampling_kwargs['structured_outputs'] = StructuredOutputsParams(structural_tag=json.dumps(structural_tag.model_dump()))
+
     sampling_params = SamplingParams(**sampling_kwargs)
 
     orig_topics = DEFAULT_TOPICS
