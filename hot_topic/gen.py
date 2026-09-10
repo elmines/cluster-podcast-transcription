@@ -111,8 +111,11 @@ def main(raw_args=None):
 
     max_input = max_model_len - max_new_tokens
 
-    write_topics = get_csv_writer(topic_path, ['topic', 'topic_desc'])
-    write_quotes = get_csv_writer(quote_path, ['episode_file', 'topic', 'episode_quote'])
+    raw_write_topics = get_csv_writer(topic_path, ['author', 'topic', 'topic_desc'])
+    raw_write_quotes = get_csv_writer(quote_path, ['author', 'episode_file', 'topic', 'episode_quote'])
+    write_topics = lambda rows: raw_write_topics([model_name] + r for r in rows)
+    write_quotes = lambda rows: raw_write_quotes([model_name] + r for r in rows)
+
     buffered_topics = [] + orig_topics
     buffered_quotes = []
 
