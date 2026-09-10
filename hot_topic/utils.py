@@ -25,11 +25,16 @@ _MUSIC_PATT = re.compile("|".join([
 
 _WHITE_PATT = re.compile(r"\s+")
 
+def normalize_model_name(model_name: str) -> str:
+    return model_name.replace("/", "--")
+
+
 def extract_quote_context(row: pd.Series,
                           left_context_size=4096,
                           right_context_size=4096):
     quote_text = row['episode_quote']
-    text = read_transcription_text(row['episode_file'])
+    with open(row['episode_file'], newline="") as source:
+        text = combine_rows(preprocess(csv.DictReader(source)))
     index = text.index(quote_text)
     left_context = text[max(0, index - left_context_size):index]
     right_context = text[index + len(text):index + len(text) + right_context_size]
