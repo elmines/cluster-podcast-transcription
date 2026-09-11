@@ -5,6 +5,10 @@ import csv
 import os
 from collections.abc import Sequence
 
+from tqdm import tqdm
+
+from .utils import extract_quote_context, extract_show_and_episode
+
 
 def normalize_model_name(model_name: str) -> str:
     return model_name.replace("/", "--")
@@ -87,15 +91,16 @@ def tally(topic_quote_paths: Sequence[str], rejection_paths: Sequence[str]) -> t
         decisions.append(model_decisions)
         explanations.append(model_explanations)
 
-    header = ["episode_file", "topic", "episode_quote", "author"]
+    header = ["show_id", "episode_id", "topic", "contextualized_quote", "author"]
     header.extend(f"{name}--rejected" for name in model_names)
     header.append("combined--rejected")
     header.extend(f"{name}--explanation" for name in model_names)
 
     output_rows = []
-    for index, quote_row in enumerate(quote_rows):
-        row = [quote_row["episode_file"], quote_row["topic"],
-               quote_row["episode_quote"], quote_row["author"]]
+    for index, quote_row in enumerate(tqdm(quote_rows, desc="Processing quotes")):
+        show_id, episode_id = extract_show_and_episode(quote_row["episode_file"])
+        row = [show_id, episode_id, quote_row["topic"],
+               extract_quote_context(quote_row), quote_row["author"]]
         row_decisions = [model_rows[index] for model_rows in decisions]
         row.extend(row_decisions)
         row.append(combine_decisions(row_decisions, model_names))
