@@ -55,17 +55,6 @@ def main(raw_args=None):
     model_name = args.model
     config = AutoConfig.from_pretrained(model_name)
 
-    max_model_len = min( getattr(config, "max_position_embeddings", 96000), 96000 )
-    max_num_seqs = 1
-    max_new_tokens = 1024
-    llm = LLM(model=model_name,
-              max_num_seqs=max_num_seqs,
-              max_model_len=max_model_len,
-            # TODO: Find out what I should actually set this to,
-            # so as to not cause an OOM error
-            #   max_num_batched_tokens=max_num_seqs * max_model_len
-              gpu_memory_utilization=0.95)
-
     # Sample one episode from each show
     show_dirs = [d_path for d_path in glob.glob(os.path.join(data_dir, "*")) if os.path.isdir(d_path)]
     csvs_by_show_dir = {}
@@ -118,6 +107,17 @@ def main(raw_args=None):
     raw_rows = None # Free up memory
 
     output_pattern = re.compile(r"\[1\] ([^:\r\n]+) : ([^:\r\n]+) : ([^\r\n]+)")
+    max_model_len = min( getattr(config, "max_position_embeddings", 96000), 96000 )
+    max_num_seqs = 1
+    max_new_tokens = 1024
+    llm = LLM(model=model_name,
+              max_num_seqs=max_num_seqs,
+              max_model_len=max_model_len,
+            # TODO: Find out what I should actually set this to,
+            # so as to not cause an OOM error
+            #   max_num_batched_tokens=max_num_seqs * max_model_len
+              gpu_memory_utilization=0.95)
+
     tokenizer = llm.get_tokenizer()
 
     sampling_kwargs = {

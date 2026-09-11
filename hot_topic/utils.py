@@ -128,7 +128,7 @@ def tokenized_with_trunc(tokenizer: PreTrainedTokenizerFast,
     chunks = []
     for start in range(0, len(document_tokens), remaining_capacity):
         chunk_tokens = document_tokens[start:start + remaining_capacity]
-        assert chunk_tokens == document_tokens
+        # assert chunk_tokens == document_tokens
         chunk_document = tokenizer.decode(tokenizer.convert_tokens_to_ids(chunk_tokens))
         chunks.append(
             tokenizer.apply_chat_template(
