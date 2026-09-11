@@ -1,8 +1,10 @@
 import csv
 
-def get_csv_writer(path, fieldnames):
-    with open(path, 'w') as w:
-        csv.writer(w).writerow(fieldnames)
+def get_csv_writer(path, fieldnames, append=False):
+    if not append:
+        with open(path, 'w') as w:
+            csv.writer(w).writerow(fieldnames)
+
     def append_func(rows):
         if not rows:
             return

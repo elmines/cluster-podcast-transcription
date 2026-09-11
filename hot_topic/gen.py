@@ -30,6 +30,8 @@ def main(raw_args=None):
     parser.add_argument("-n", type=int)
     parser.add_argument("--model", default="meta-llama/Llama-3.1-8B-Instruct")
     parser.add_argument("--buffer-size", default=8, type=int)
+    parser.add_argument("--checkpoint", type=int,
+                        help="Resume after this many already-processed files")
     parser.add_argument("--minimum-overlap", default=0.95, type=float,
                         help="Minimum quote overlap score from 0 to 1")
 
@@ -40,6 +42,9 @@ def main(raw_args=None):
     quote_path = os.path.join(output_dir, "topic_quotes.csv")
     n = args.n
     buffer_size = args.buffer_size
+    checkpoint = args.checkpoint
+    if checkpoint is not None and checkpoint < 0:
+        parser.error("--checkpoint must be non-negative")
     minimum_overlap = args.minimum_overlap
     if not 0 <= minimum_overlap <= 1:
         parser.error("--minimum-overlap must be between 0 and 1")
@@ -82,6 +87,25 @@ def main(raw_args=None):
 
     if n:
         file_names = file_names[:n]
+
+    orig_topics = DEFAULT_TOPICS
+    topic_to_desc = OrderedDict(orig_topics)
+    topic_str = "\n".join(format_topic(name, desc) for name, desc in orig_topics)
+    if checkpoint is not None:
+        for output_path in (topic_path, quote_path):
+            if not os.path.isfile(output_path):
+                parser.error(f"checkpoint output does not exist: {output_path}")
+
+        with open(topic_path, 'r') as r:
+            checkpoint_topics = [
+                (row['topic'], row['topic_desc'])
+                for row in csv.DictReader(r)
+            ]
+        topic_to_desc = OrderedDict(checkpoint_topics)
+        topic_str = "\n".join(
+            format_topic(name, desc) for name, desc in checkpoint_topics
+        )
+        file_names = file_names[checkpoint:]
 
     raw_rows = []
     for csv_path in tqdm(file_names, desc="Reading transcripts into memory"):
@@ -130,18 +154,14 @@ def main(raw_args=None):
 
     sampling_params = SamplingParams(**sampling_kwargs)
 
-    orig_topics = DEFAULT_TOPICS
-    topic_to_desc = OrderedDict(orig_topics)
-    topic_str = "\n".join( format_topic(name, desc) for name, desc in orig_topics)
-
     max_input = max_model_len - max_new_tokens
 
-    raw_write_topics = get_csv_writer(topic_path, ['author', 'topic', 'topic_desc'])
-    raw_write_quotes = get_csv_writer(quote_path, ['author', 'episode_file', 'topic', 'episode_quote'])
+    raw_write_topics = get_csv_writer(topic_path, ['author', 'topic', 'topic_desc'], append=checkpoint is not None)
+    raw_write_quotes = get_csv_writer(quote_path, ['author', 'episode_file', 'topic', 'episode_quote'], append=checkpoint is not None)
     write_topics = lambda rows: raw_write_topics([model_name] + r for r in rows)
     write_quotes = lambda rows: raw_write_quotes([model_name] + r for r in rows)
 
-    buffered_topics = [list(tup) for tup in orig_topics]
+    buffered_topics = [] if checkpoint is not None else [list(tup) for tup in orig_topics]
     buffered_quotes = []
 
     text_iter = tqdm(texts, desc="Processing texts")
