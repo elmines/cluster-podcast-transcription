@@ -47,18 +47,32 @@ def align_quote(quote: str, text: str, minimum_overlap: float) -> Optional[str]:
         return None
     return substr
 
+class ContextExtractor:
+    """
+    Memoizes the texts of episodes,
+    so we don't have to re-read the entire transcript
+    off disk every time we want to extract the context
+    for a quote from said transcript
+    """
+    def __init__(self):
+        self.__episode_texts: Dict[str, str] = dict()
 
-def extract_quote_context(row: pd.Series,
-                          left_context_size=4096,
-                          right_context_size=4096):
-    quote_text = row['episode_quote']
-    with open(row['episode_file'], newline="") as source:
-        text = combine_rows(preprocess(csv.DictReader(source)))
-    index = text.index(quote_text)
-    left_context = text[max(0, index - left_context_size):index]
-    right_context = text[index + len(text):index + len(text) + right_context_size]
-    return left_context + f"<document>{quote_text}</document>" + right_context
 
+    def __call__(self,
+                              row: pd.Series,
+                              left_context_size=4096,
+                              right_context_size=4096):
+        episode_path = row['episode_file']
+        if episode_path not in self.__episode_texts:
+            with open(episode_path, newline="") as source:
+                self.__episode_texts[episode_path] = combine_rows(preprocess(csv.DictReader(source)))
+        text = self.__episode_texts[episode_path]
+        quote_text = row['episode_quote']
+        quote_start = text.index(quote_text)
+        quote_end = quote_start + len(quote_text)
+        left_context  = text[max(0, quote_start - left_context_size):quote_start]
+        right_context = text[quote_end:quote_end + right_context_size]
+        return left_context + f"<document>{quote_text}</document>" + right_context
 
 
 def preprocess(rows: Iterable[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
