@@ -30,3 +30,8 @@ flashinfer-jit-cache = { index = "flashinfer" }
 name = "flashinfer"
 url = "https://flashinfer.ai/whl/cu130/"
 explicit = true
+
+[dependency-groups]
+dev = [
+    "line-profiler>=5.0.2",
+]

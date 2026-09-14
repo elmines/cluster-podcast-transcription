@@ -7,6 +7,8 @@ from itertools import batched, product
 from pathlib import Path
 from collections import OrderedDict
 
+from line_profiler import profile
+
 import torch
 from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
@@ -18,6 +20,7 @@ NOT_POLITICS_TOPIC = "not_politics"
 DEFAULT_TEMPLATE = "This sentence is related to {}"
 NON_POLI_PROMPT = "This sentence is not related to politics"
 
+@profile
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description="Score transcript lines against generated topics")
     parser.add_argument("-i", default="out/resegmented", type=os.path.abspath)
@@ -25,7 +28,8 @@ def main(raw_args=None):
     parser.add_argument("-o", default="out/line_scores", type=os.path.abspath)
     parser.add_argument("--model", default="MoritzLaurer/ModernBERT-large-zeroshot-v2.0")
     parser.add_argument("--prec", default=6, type=int, help="Precision in digits to which to round ")
-    parser.add_argument("--batch-size", default=32, type=int)
+    parser.add_argument("--batch-size", default=256, type=int)
+    parser.add_argument('-n', type=int)
     args = parser.parse_args(raw_args)
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
@@ -34,8 +38,10 @@ def main(raw_args=None):
     digits_prec = args.prec
     in_dir = args.i
     out_dir = args.o 
+    n = args.n
     score_format = '{:' + str(digits_prec) + "f}"
 
+    print(f"PROCESS: {os.getpid()}")
 
     topics_to_prompts = OrderedDict()
     topics_to_prompts[POLITICS_TOPIC] = DEFAULT_TEMPLATE.format(POLITICS_TOPIC)
@@ -62,6 +68,8 @@ def main(raw_args=None):
     device = next(model.parameters()).device
 
     input_paths = sorted(Path(in_dir).glob("**/*.csv"))
+    if n is not None:
+        input_paths = input_paths[:n]
     for input_path in tqdm(input_paths, desc="Scoring transcript lines"):
         relative_path = input_path.relative_to(in_dir)
         output_path = os.path.join(out_dir, relative_path)
@@ -91,7 +99,11 @@ def main(raw_args=None):
                     dim=1,
                 )
                 batch_scores = torch.softmax(torch.stack((non_entailment, entailment), dim=1), dim=1)[:, 1]
-                scores.extend(batch_scores.detach().cpu().tolist())
+
+                cpu_scores = batch_scores.detach()
+                cpu_scores = batch_scores.cpu()
+                cpu_scores = batch_scores.tolist()
+                scores.extend(cpu_scores)
 
         # Makes our CSV file easier to read
         # The format command does rounding as needed
