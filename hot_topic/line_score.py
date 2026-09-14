@@ -24,14 +24,17 @@ def main(raw_args=None):
     parser.add_argument("-t", "--topics", required=True, type=os.path.abspath)
     parser.add_argument("-o", default="out/line_scores", type=os.path.abspath)
     parser.add_argument("--model", default="MoritzLaurer/ModernBERT-large-zeroshot-v2.0")
+    parser.add_argument("--prec", default=6, type=int, help="Precision in digits to which to round ")
     parser.add_argument("--batch-size", default=32, type=int)
     args = parser.parse_args(raw_args)
     if args.batch_size < 1:
         parser.error("--batch-size must be positive")
     topic_path = args.topics
     batch_size = args.batch_size
+    digits_prec = args.prec
     in_dir = args.i
     out_dir = args.o 
+    score_format = '{:' + str(digits_prec) + "f}"
 
 
     topics_to_prompts = OrderedDict()
@@ -89,6 +92,10 @@ def main(raw_args=None):
                 )
                 batch_scores = torch.softmax(torch.stack((non_entailment, entailment), dim=1), dim=1)[:, 1]
                 scores.extend(batch_scores.detach().cpu().tolist())
+
+        # Makes our CSV file easier to read
+        # The format command does rounding as needed
+        scores = [ score_format.format(s) for s in scores]
     
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
         with open(output_path, "w", newline="") as destination:
