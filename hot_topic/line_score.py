@@ -100,8 +100,6 @@ def main(raw_args=None):
                 )
                 batch_scores = torch.softmax(torch.stack((non_entailment, entailment), dim=1), dim=1)[:, 1]
 
-                cpu_scores = batch_scores.detach()
-                cpu_scores = batch_scores.cpu()
                 cpu_scores = batch_scores.tolist()
                 scores.extend(cpu_scores)
 
