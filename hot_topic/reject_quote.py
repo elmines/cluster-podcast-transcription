@@ -8,7 +8,7 @@ import re
 from tqdm import tqdm
 from vllm import LLM, SamplingParams
 
-from .utils import extract_quote_context, normalize_model_name, WHITE_PATT
+from .utils import ContextExtractor, normalize_model_name, WHITE_PATT
 
 
 PROMPT_TEMPLATE = """
@@ -65,6 +65,7 @@ def main(raw_args=None):
 	rows = read_topic_quotes(args.inputs)
 	if args.n:
 		rows = rows[:args.n]
+	extract_quote_context = ContextExtractor()
 	conversations = [
 		[
 			{"role": "system", "content": SYSTEM_PROMPT},
