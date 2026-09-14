@@ -1,4 +1,6 @@
+import re
 
+from .false_sigs import *
 
 DEFAULT_TOPICS = \
 [
@@ -7,10 +9,40 @@ DEFAULT_TOPICS = \
     ("trade"        , "mentions the exchange of capital, goods, and services")
 ]
 
+_AD_WORDS = [
+    r"\.com",
+    r"\.edu",
+    "Rasmussen University",
+    "Arizona State University",
+    "US Bank Business Essential",
+    "Alpha Insurance",
+    "Hartford",
+    "OnDeck",
+    "American Airlines Advantage Business Program",
+    "Davis Gainesville Chevrolet GMC",
+    "Grainger",
+    "Kalshi",
+    "Vanta ",
+    "V Pizza",
+    "Coke Florida",
+    "Burrito Factory",
+    "American Express Business Gold Card",
+    "Spurrier's Grit-Iron Grill in Gainesville",
+    "Original American Kitchen",
+    "ACAS powers",
+    "Hey Gainesville"
+]
+
+AD_PATTERN = re.compile(
+    '|'.join(w for w in _AD_WORDS)
+)
+
+AD_REPL_STR = ""
+
 GEN_GRAMMAR = \
 r"""
 root ::=  () | entry ("\n" entry){0,2}
-entry ::= "[1] " [a-z][a-z ]{0,29} " : " [a-z][a-z ]{0,255} " : " [^\r\n]{1,512}
+entry ::= "[1] " [^:\r\n]{1,30} " : " [^:\r\n]{1,256} " : " [^\r\n]{1,256}
 """
 
 GEN_SYSTEM_PROMPT = \
@@ -19,12 +51,13 @@ Answer with one topic per line.
 Use the following format:
 [1] topic : topic desc : episode quote
 
+Do not increment the [1] marker. Even if you output multiple topics, prefix each one with [1].
 The topic should be 1 to 30 characters.
 The topic description should be 1 to 256 characters.
-The episode quote should be 1 to 512 characters.
+The episode quote should be 1 to 256 characters.
 Do not add quote marks to your episode quote.
+Do not give the same topic more than once for the same episode.
 """
-
 
 # Modifed from TopicGPT's original generation prompt
 GEN_USER_PROMPT = \
@@ -52,6 +85,11 @@ Amends the Harmonized Tariff Schedule of the United States to suspend temporaril
 
 Your response: 
 [1] trade : mentions the exchange of capital, goods, and services : duty on mixtures containing
+
+Do not quote noise such as music, promotional messages, public service announcements, or advertisements as justification for topics.
+Don't even quote text near such noise, as it may be noise as well.
+Here are some examples of such noise:
+{Noise}
 
 [Instructions]
 Step 1: Determine topics mentioned in the document. 

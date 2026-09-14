@@ -1,8 +1,82 @@
-from typing import List, Any, Tuple
-import sys
+from typing import List, Any, Tuple, Dict, Iterable, Generator, Callable, Optional
+from operator import itemgetter
+import csv
 import os
+import re
 
+import pandas as pd
+from rapidfuzz.fuzz import partial_ratio_alignment
 from transformers import PreTrainedTokenizerFast
+
+from .constants import AD_PATTERN
+
+def map_key(map_func, k, dicts):
+    def wrapped_map_func(d):
+        return {
+            k2 : map_func(v) if k2 == k else v
+            for k2,v in d.items()
+        }
+    return map(wrapped_map_func, dicts)
+
+_MUSIC_PATT = re.compile("|".join([
+    r"\[.*?MUSIC.*?\]",
+    r"\(.*?music\)",
+    r"\(singing.*?\)",
+]), flags=re.IGNORECASE)
+
+WHITE_PATT = re.compile(r"\s+")
+
+def normalize_model_name(model_name: str) -> str:
+    return model_name.replace("/", "--")
+
+
+def align_quote(quote: str, text: str, minimum_overlap: float) -> Optional[str]:
+    quote = quote.strip()
+    if not quote:
+        return
+
+    alignment = partial_ratio_alignment(
+        quote,
+        text,
+        score_cutoff=minimum_overlap,
+    )
+    if alignment is None:
+        return None
+    substr = text[alignment.dest_start:alignment.dest_end].strip()
+    if not substr:
+        return None
+    return substr
+
+
+def extract_quote_context(row: pd.Series,
+                          left_context_size=4096,
+                          right_context_size=4096):
+    quote_text = row['episode_quote']
+    with open(row['episode_file'], newline="") as source:
+        text = combine_rows(preprocess(csv.DictReader(source)))
+    index = text.index(quote_text)
+    left_context = text[max(0, index - left_context_size):index]
+    right_context = text[index + len(text):index + len(text) + right_context_size]
+    return left_context + f"<document>{quote_text}</document>" + right_context
+
+
+
+def preprocess(rows: Iterable[Dict[str, Any]]) -> Generator[Dict[str, Any], None, None]:
+
+    # TODO: Use a joint regex for both of these?
+    # Would speed things up
+    # Eliminate rows with music
+    rows = filter(lambda row: not _MUSIC_PATT.search(row['text']), rows)
+    # Eliminate rows with ads
+    rows = filter(lambda row: not AD_PATTERN.search(row['text']), rows)
+    # Clean up large blocks of whitespace created by any earlier subs
+    # Probably not needed right now
+    rows = map_key(lambda text: WHITE_PATT.sub(" ", text), "text", rows)
+
+    yield from rows
+
+def combine_rows(rows: Iterable[Dict[str, Any]]) -> str:
+    return "".join(map(itemgetter('text'), rows))
 
 ############# From Chat GPT ########################
 class PartialFormatDict(dict):
@@ -23,21 +97,46 @@ def tokenized_with_trunc(tokenizer: PreTrainedTokenizerFast,
                          prompt_template: str,
                          document: str,
                          max_len: int):
+    base_template = messages + [{"role": "user", "content": prompt_template.format(Document="")}]
+    base_prompt = tokenizer.apply_chat_template(
+        base_template,
+        tokenize=True,
+        add_generation_prompt=True,
+        return_tensors='pt'
+    )
+    base_len = base_prompt['input_ids'].shape[-1]
+    # print(f"base_len = {base_len}")
 
-    trunc_document = document
-    while True:
-        prompt = tokenizer.apply_chat_template(
-            messages + [{"role": "user", "content": prompt_template.format(Document=trunc_document)}],
-            tokenize=True,
-            add_generation_prompt=True,
-            return_tensors='pt'
-        )
-        if (excess := prompt['input_ids'].shape[-1] - max_len) > 0:
-            trunc_document = tokenizer.decode(
-                tokenizer.convert_tokens_to_ids(tokenizer.tokenize(document))[:-excess]
+    document_tokens = tokenizer.tokenize(document)
+    # print(f"document_tokens = {len(document_tokens)}")
+    if not document_tokens:
+        return [
+            tokenizer.apply_chat_template(
+                messages + [{"role": "user", "content": prompt_template.format(Document=document)}],
+                tokenize=True,
+                add_generation_prompt=True,
+                return_tensors='pt'
             )
-            if not trunc_document:
-                print("Prompt left no room for document", file=sys.stderr)
-        else:
-            break
-    return prompt
+        ]
+
+    # If the base prompt is already at or above max_len, we still need to split the
+    # document into separate chunks rather than erroring out. In that case, treat the
+    # document chunk size as max_len so every chunk remains a valid standalone prompt.
+    remaining_capacity = max_len - base_len if base_len < max_len else max_len
+    remaining_capacity = max(1, remaining_capacity)
+
+    chunks = []
+    for start in range(0, len(document_tokens), remaining_capacity):
+        chunk_tokens = document_tokens[start:start + remaining_capacity]
+        # assert chunk_tokens == document_tokens
+        chunk_document = tokenizer.decode(tokenizer.convert_tokens_to_ids(chunk_tokens))
+        chunks.append(
+            tokenizer.apply_chat_template(
+                messages + [{"role": "user", "content": prompt_template.format(Document=chunk_document)}],
+                tokenize=True,
+                add_generation_prompt=True,
+                return_tensors='pt'
+            )
+        )
+        # print(f"\tchunk = {chunks[-1]['input_ids'].shape}")
+    return chunks

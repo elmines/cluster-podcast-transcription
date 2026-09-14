@@ -8,14 +8,18 @@ import stat
 
 
 JOBS = [
-	("18:00:00", "meta-llama/Llama-3.3-70B-Instruct", "b200", "gpu:1"),
-	("12:00:00", "openai/gpt-oss-120b"              , "b200", "gpu:1"),
-	("15:00:00", "google/gemma-4-31B-it"            , "b200", "gpu:1"),
+	("6:00:00", "meta-llama/Llama-3.3-70B-Instruct", "b200", "gpu:1"),
+	("4:00:00", "openai/gpt-oss-120b"              , "b200", "gpu:1"),
+	("4:00:00", "google/gemma-4-31B-it"            , "b200", "gpu:1"),
 ]
 
 
 def shell_quote(value):
 	return shlex.quote(str(value))
+
+
+def normalize_model_name(model):
+	return model.replace("/", "--")
 
 
 def chmodx(out_path):
@@ -33,28 +37,24 @@ def load_config(repo_dir):
 		return json.load(handle)
 
 
-def build_script(repo_dir, duration, partition, email, model, gres):
-	commands = [
-		" \\\n\t".join(
-		[
-			"uv",
-			"run",
-			"python",
-			"-m",
-			"hot_topic.gen",
-			"-i",
-			shell_quote(repo_dir / "out" / "resegmented"),
-			"--model",
-			shell_quote(model),
-		]
-		),
+def build_script(repo_dir, duration, partition, email, model, input_paths, gres):
+	command = [
+		"uv",
+		"run",
+		"python",
+		"-m",
+		"hot_topic.reject_quote",
+		"-i",
+		*(shell_quote(path) for path in input_paths),
+		"--model",
+		shell_quote(model),
 	]
-	command_str = "\n".join(commands)
+	command_str = " \\\n\t".join(command)
 
 	return f"""#!/bin/bash
 
 #SBATCH --time={shell_quote(duration)}
-#SBATCH --job-name=topic_disc_{shell_quote(model.replace('/', '--'))}
+#SBATCH --job-name=reject_quote_{shell_quote(normalize_model_name(model))}
 #SBATCH --partition={shell_quote(partition)}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
@@ -85,9 +85,14 @@ def main():
 		"rtx": config["rtx_partition"],
 		"b200": config["b200_partition"],
 	}
+	input_paths = [
+		repo_dir / "out" / f"gen--{normalize_model_name(model)}" / "topic_quotes.csv"
+		for _, model, _, _ in JOBS
+	]
+
 	for duration, model, partition_name, gres in JOBS:
-		model_dir_name = model.replace("/", "--")
-		script_path = repo_dir / "slurm_scripts" / f"topic_disc_{model_dir_name}.sh"
+		model_dir_name = normalize_model_name(model)
+		script_path = repo_dir / "slurm_scripts" / f"reject_quote_{model_dir_name}.sh"
 		script_path.parent.mkdir(parents=True, exist_ok=True)
 
 		script = build_script(
@@ -96,6 +101,7 @@ def main():
 			partitions[partition_name],
 			config["email"],
 			model,
+			input_paths,
 			gres,
 		)
 		write_code(script_path, script)
