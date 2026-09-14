@@ -7,7 +7,7 @@ from collections.abc import Sequence
 
 from tqdm import tqdm
 
-from .utils import extract_quote_context, extract_show_and_episode
+from .utils import ContextExtractor, extract_show_and_episode
 
 
 def normalize_model_name(model_name: str) -> str:
@@ -97,6 +97,7 @@ def tally(topic_quote_paths: Sequence[str], rejection_paths: Sequence[str]) -> t
     header.extend(f"{name}--explanation" for name in model_names)
 
     output_rows = []
+    extract_quote_context = ContextExtractor()
     for index, quote_row in enumerate(tqdm(quote_rows, desc="Processing quotes")):
         show_id, episode_id = extract_show_and_episode(quote_row["episode_file"])
         row = [show_id, episode_id, quote_row["topic"],
