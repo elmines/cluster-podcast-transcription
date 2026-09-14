@@ -8,9 +8,9 @@ import stat
 
 
 JOBS = [
-	("3:15:00", "meta-llama/Llama-3.3-70B-Instruct", "b200", "gpu:1"),
-	("3:15:00", "openai/gpt-oss-120b"              , "b200", "gpu:1"),
-	("3:15:00", "google/gemma-4-31B-it"            , "b200", "gpu:1"),
+	("6:00:00", "meta-llama/Llama-3.3-70B-Instruct", "b200", "gpu:1"),
+	("4:00:00", "openai/gpt-oss-120b"              , "b200", "gpu:1"),
+	("4:00:00", "google/gemma-4-31B-it"            , "b200", "gpu:1"),
 ]
 
 
@@ -54,7 +54,7 @@ def build_script(repo_dir, duration, partition, email, model, input_paths, gres)
 	return f"""#!/bin/bash
 
 #SBATCH --time={shell_quote(duration)}
-#SBATCH --job-name=quote_reject_{shell_quote(normalize_model_name(model))}
+#SBATCH --job-name=reject_quote_{shell_quote(normalize_model_name(model))}
 #SBATCH --partition={shell_quote(partition)}
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
