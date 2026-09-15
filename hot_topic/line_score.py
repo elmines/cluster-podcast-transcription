@@ -3,15 +3,17 @@
 import argparse
 import csv
 import os
-from itertools import batched, product
+from itertools import product, batched
 from pathlib import Path
 from collections import OrderedDict
+import sys
 
 from line_profiler import profile
 
 import torch
 from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from torch.utils.data import DataLoader
 
 
 POLITICS_TOPIC = "politics"
@@ -81,18 +83,24 @@ def main(raw_args=None):
         lines = [row["text"] for row in rows]
 
         pairs = list(product(lines, topics_to_prompts.values()))
-        scores = []
-        with torch.inference_mode():
-            for pair_batch in batched(pairs, batch_size):
-                premises, hypotheses = zip(*pair_batch)
-                inputs = tokenizer(
-                    list(premises),
-                    list(hypotheses),
+        gpu_batches = []
+        for pair_batch in batched(tqdm(pairs, desc="Tokenizing pairs"), batch_size):
+            prem_batch, hyp_batch = zip(*pair_batch)
+            encoded = tokenizer(
+                    prem_batch,
+                    hyp_batch,
                     padding=True,
-                    truncation=True,
-                    return_tensors="pt",
-                ).to(device)
-                logits = model(**inputs).logits
+                    return_tensors='pt',
+                )
+            gpu_batches.append({k:v.to(device) for k,v in encoded.items()})
+            # print({k:v.device for k,v in gpu_batches[-1].items()})
+            # sys.exit(1)
+
+        scores = []
+        buffer = []
+        with torch.inference_mode():
+            for batch in tqdm(gpu_batches, desc="Scoring batches"):
+                logits = model(**batch).logits
 
                 entailment = logits[:, entailment_label]
                 # Combines all the logits for non-entailment classes into 1 logit representing non-entailment
