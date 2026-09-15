@@ -28,6 +28,7 @@ def main(raw_args=None):
     parser.add_argument("-o", default="out/line_scores", type=os.path.abspath)
     parser.add_argument("--model", default="MoritzLaurer/ModernBERT-large-zeroshot-v2.0")
     parser.add_argument("--prec", default=6, type=int, help="Precision in digits to which to round ")
+    parser.add_argument("--buffer", default=1, type=int, help="How many batches of results to keep on GPU memory before flushing to CPU")
     parser.add_argument("--batch-size", default=256, type=int)
     parser.add_argument('-n', type=int)
     args = parser.parse_args(raw_args)
@@ -35,6 +36,7 @@ def main(raw_args=None):
         parser.error("--batch-size must be positive")
     topic_path = args.topics
     batch_size = args.batch_size
+    buffer_size = args.buffer
     digits_prec = args.prec
     in_dir = args.i
     out_dir = args.o 
@@ -70,7 +72,7 @@ def main(raw_args=None):
     input_paths = sorted(Path(in_dir).glob("**/*.csv"))
     if n is not None:
         input_paths = input_paths[:n]
-    for input_path in tqdm(input_paths, desc="Scoring transcript lines"):
+    for input_path in tqdm(input_paths, desc="Processing episodes"):
         relative_path = input_path.relative_to(in_dir)
         output_path = os.path.join(out_dir, relative_path)
 
@@ -99,9 +101,13 @@ def main(raw_args=None):
                     dim=1,
                 )
                 batch_scores = torch.softmax(torch.stack((non_entailment, entailment), dim=1), dim=1)[:, 1]
+                buffer.append(batch_scores.detach())
 
-                cpu_scores = batch_scores.tolist()
-                scores.extend(cpu_scores)
+                if len(buffer) >= buffer_size:
+                    scores.extend(torch.cat(buffer).tolist())
+                    buffer = []
+            if buffer:
+                scores.extend(torch.cat(buffer).tolist())
 
         # Makes our CSV file easier to read
         # The format command does rounding as needed
