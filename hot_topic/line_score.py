@@ -22,13 +22,14 @@ NON_POLI_PROMPT = "This sentence is not related to politics"
 
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description="Score transcript lines against generated topics")
-    parser.add_argument("-i", default="out/resegmented", type=os.path.abspath)
+    parser.add_argument("--root", default="out/resegmented", type=Path)
+    parser.add_argument("--files", nargs="+", type=Path, help="Input files to process")
     parser.add_argument("-t", "--topics", required=True, type=os.path.abspath)
     parser.add_argument("-o", default="out/line_scores", type=os.path.abspath)
     parser.add_argument("--model", default="MoritzLaurer/ModernBERT-large-zeroshot-v2.0")
     parser.add_argument("--prec", default=6, type=int, help="Precision in digits to which to round ")
-    parser.add_argument("--buffer", default=1, type=int, help="How many batches of results to keep on GPU memory before flushing to CPU")
-    parser.add_argument("--batch-size", default=256, type=int)
+    parser.add_argument("--buffer", default=32, type=int, help="How many batches of results to keep on GPU memory before flushing to CPU")
+    parser.add_argument("--batch-size", default=512, type=int)
     parser.add_argument('-n', type=int)
     args = parser.parse_args(raw_args)
     if args.batch_size < 1:
@@ -37,7 +38,7 @@ def main(raw_args=None):
     batch_size = args.batch_size
     buffer_size = args.buffer
     digits_prec = args.prec
-    in_dir = args.i
+    in_dir = args.root.resolve()
     out_dir = args.o 
     n = args.n
     score_format = '{:' + str(digits_prec) + "f}"
@@ -71,7 +72,16 @@ def main(raw_args=None):
     # Process files in descending order of size
     # I'd rather surface an out-of-memory error at the beginning
     # Also helps us make a crude worst-case estimate on runtime using tqdm's estimate
-    input_paths = sorted(Path(in_dir).glob("**/*.csv"), key=os.path.getsize, reverse=True)
+    if args.files:
+        input_paths = []
+        for input_path in args.files:
+            resolved_path = input_path.resolve()
+            if not resolved_path.is_relative_to(in_dir):
+                parser.error(f"input file is outside --root: {input_path}")
+            input_paths.append(resolved_path)
+    else:
+        input_paths = list(in_dir.glob("**/*.csv"))
+    input_paths = sorted(input_paths, key=os.path.getsize, reverse=True)
 
     if n is not None:
         input_paths = input_paths[:n]
