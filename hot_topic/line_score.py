@@ -8,13 +8,10 @@ from pathlib import Path
 from collections import OrderedDict
 import sys
 
-from line_profiler import profile
-
 import numpy as np
 import torch
 from tqdm import tqdm
 from transformers import AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding
-from torch.utils.data import DataLoader
 
 
 POLITICS_TOPIC = "politics"
@@ -23,7 +20,6 @@ NOT_POLITICS_TOPIC = "not_politics"
 DEFAULT_TEMPLATE = "This sentence is related to {}"
 NON_POLI_PROMPT = "This sentence is not related to politics"
 
-@profile
 def main(raw_args=None):
     parser = argparse.ArgumentParser(description="Score transcript lines against generated topics")
     parser.add_argument("-i", default="out/resegmented", type=os.path.abspath)
@@ -72,7 +68,11 @@ def main(raw_args=None):
 
     device = next(model.parameters()).device
 
-    input_paths = sorted(Path(in_dir).glob("**/*.csv"))
+    # Process files in descending order of size
+    # I'd rather surface an out-of-memory error at the beginning
+    # Also helps us make a crude worst-case estimate on runtime using tqdm's estimate
+    input_paths = sorted(Path(in_dir).glob("**/*.csv"), key=os.path.getsize, reverse=True)
+
     if n is not None:
         input_paths = input_paths[:n]
     for input_path in tqdm(input_paths, desc="Processing episodes"):
