@@ -104,6 +104,7 @@ def build_script(repo_dir, root, topics, duration, partition, email, input_paths
 
 module load cuda/13.0.2 git
 export XDG_RUNTIME_DIR=$SLURM_TMPDIR
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 echo CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES
 date
 hostname

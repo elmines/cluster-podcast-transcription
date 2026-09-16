@@ -29,7 +29,7 @@ def main(raw_args=None):
     parser.add_argument("--model", default="MoritzLaurer/ModernBERT-large-zeroshot-v2.0")
     parser.add_argument("--prec", default=6, type=int, help="Precision in digits to which to round ")
     parser.add_argument("--buffer", default=32, type=int, help="How many batches of results to keep on GPU memory before flushing to CPU")
-    parser.add_argument("--batch-size", default=512, type=int)
+    parser.add_argument("--batch-size", default=256, type=int)
     parser.add_argument('-n', type=int)
     args = parser.parse_args(raw_args)
     if args.batch_size < 1:
@@ -94,8 +94,10 @@ def main(raw_args=None):
         lines = [row["text"] for row in rows]
 
         
+        # FIXME : Handle samples with oversized lengths
         tokenized_samples = [
-            tokenizer(prem, hyp) for prem, hyp in product(lines, topics_to_prompts.values())
+            tokenizer(prem, hyp, truncation=True)
+            for prem, hyp in product(lines, topics_to_prompts.values())
         ]
 
         # Sort samples in descending order of length
