@@ -10,9 +10,10 @@ import sys
 
 from line_profiler import profile
 
+import numpy as np
 import torch
 from tqdm import tqdm
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding
 from torch.utils.data import DataLoader
 
 
@@ -82,19 +83,24 @@ def main(raw_args=None):
             rows = list(csv.DictReader(source))
         lines = [row["text"] for row in rows]
 
-        pairs = list(product(lines, topics_to_prompts.values()))
+        
+        tokenized_samples = [
+            tokenizer(prem, hyp) for prem, hyp in product(lines, topics_to_prompts.values())
+        ]
+
+        # Sort samples in descending order of length
+        # Batches with less padding are generally better
+        seq_lens = np.array([len(sample['input_ids']) for sample in tokenized_samples])
+        sort_inds = np.flip(np.argsort(seq_lens)).tolist()
+        tokenized_samples = [ tokenized_samples[i] for i in sort_inds ]
+        # print(f"Processing {seq_lens.sum()} tokens for episode {os.path.basename(input_path)}")
+
         gpu_batches = []
-        for pair_batch in batched(tqdm(pairs, desc="Tokenizing pairs"), batch_size):
-            prem_batch, hyp_batch = zip(*pair_batch)
-            encoded = tokenizer(
-                    prem_batch,
-                    hyp_batch,
-                    padding=True,
-                    return_tensors='pt',
-                )
+        collator = DataCollatorWithPadding(tokenizer, return_tensors='pt')
+        for samples in batched(tokenized_samples, batch_size):
+            encoded = collator(samples)
             gpu_batches.append({k:v.to(device) for k,v in encoded.items()})
-            # print({k:v.device for k,v in gpu_batches[-1].items()})
-            # sys.exit(1)
+        tokenized_samples = None # Deallocate that memory
 
         scores = []
         buffer = []
@@ -117,6 +123,10 @@ def main(raw_args=None):
             if buffer:
                 scores.extend(torch.cat(buffer).tolist())
 
+
+        # Use the sort_inds from earlier to put the results back in proper order
+        # TODO: Probably can be more efficient than this
+        scores = [ score for _, score in sorted(enumerate(scores), key=lambda i_score: sort_inds[i_score[0]])]
         # Makes our CSV file easier to read
         # The format command does rounding as needed
         scores = [ score_format.format(s) for s in scores]
