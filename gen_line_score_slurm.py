@@ -10,7 +10,7 @@ import shlex
 import stat
 
 
-GPU_HOUR_BUDGET = 250
+GPU_HOUR_BUDGET = 80
 
 
 def shell_quote(value):
