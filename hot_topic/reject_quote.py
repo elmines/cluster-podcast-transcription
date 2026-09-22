@@ -51,7 +51,7 @@ def main(raw_args=None):
 	parser.add_argument("-o", "--output", type=os.path.abspath)
 	parser.add_argument('-n', type=int)
 	parser.add_argument("--model", default="meta-llama/Llama-3.2-3B-Instruct")
-	parser.add_argument("--max-model-len", type=int, default=2048)
+	parser.add_argument("--max-model-len", type=int, default=5020)
 	parser.add_argument("--max-num-seqs", type=int, default=8)
 	args = parser.parse_args(raw_args)
 
