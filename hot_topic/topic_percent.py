@@ -1,32 +1,43 @@
 
-import polars as pl
+import argparse
 import glob
-from tqdm import tqdm
 import csv
+import polars as pl
+from tqdm import tqdm
 
-if __name__ == "__main__":
 
-    topic_names = [
-        "politics","not_politics","entertainment","trade","psychology","art","technology","sports","astronomy","education","health","finance","environment","religion","history","outdoors","business","law","agriculture"
-    ]
+def main(raw_args=None):
+    parser = argparse.ArgumentParser(description="Calculate topic percentages for scored line CSVs")
+    parser.add_argument("-i", "--input", default="./out/line_scores/**/*.csv",
+                        help="Glob for line score CSV files")
+    parser.add_argument("-o", "--output", default="out/topic_percents.csv",
+                        help="Output CSV path")
+    parser.add_argument("--thresh", type=float, default=0.8,
+                        help="Score threshold for counting a topic")
+    args = parser.parse_args(raw_args)
+
+    file_paths = glob.glob(args.input)
+    topic_names = pl.scan_csv(file_paths[0]).collect_schema().names()
     field_names = ["filepath", "nrows"] + topic_names
 
     raw_rows = []
-    thresh = 0.8
-    file_paths = glob.glob("./out/line_scores/**/*.csv")
     for csv_path in tqdm(file_paths):
         result = pl \
             .scan_csv(csv_path) \
             .select(
                 [pl.lit(csv_path).alias('filepath'), pl.len().alias('nrows')] + \
-                [ ((pl.col(c) > thresh).sum() / pl.len()).alias(c) for c in topic_names]
+                [((pl.col(c) > args.thresh).sum() / pl.len()).alias(c) for c in topic_names]
             ) \
             .collect()
         raw_rows.append(result.row(0))
-    with open('out/topic_percents.csv', 'w') as w:
+    with open(args.output, 'w') as w:
         writer = csv.writer(w)
         writer.writerow(field_names)
         writer.writerows(raw_rows)
+
+
+if __name__ == "__main__":
+    main()
 
 
 
