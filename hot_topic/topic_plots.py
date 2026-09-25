@@ -4,6 +4,7 @@ from pathlib import Path
 
 import plotly.express as px
 import polars as pl
+from tqdm import tqdm
 
 
 def _plot_filename(topic_name: str) -> str:
@@ -12,7 +13,10 @@ def _plot_filename(topic_name: str) -> str:
 
 
 def make_topic_plots(input_path: str | Path, output_dir: str | Path, min_rows: int = 0) -> list[Path]:
-    data = pl.read_csv(input_path).filter(pl.col("nrows") >= min_rows)
+    all_data = pl.read_csv(input_path)
+    total_episodes = all_data.height
+    data = all_data.filter(pl.col("nrows") >= min_rows)
+    remaining_episodes = data.height
     topic_names = [
         name for name in data.columns
         if name not in {"filepath", "nrows", "politics"}
@@ -21,14 +25,19 @@ def make_topic_plots(input_path: str | Path, output_dir: str | Path, min_rows: i
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     plot_paths = []
-    for topic_name in topic_names:
+    for topic_name in tqdm(topic_names, desc='Processing topics'):
+        title = f"Politics vs. {topic_name}"
+        if remaining_episodes < total_episodes:
+            title += f" ({remaining_episodes} / {total_episodes} Episodes)"
         figure = px.scatter(
             data,
             x="politics",
             y=topic_name,
+            range_x=[0, 1],
+            range_y=[0, 1],
             hover_data=["filepath", "nrows"],
             labels={"politics": "Politics", topic_name: topic_name},
-            title=f"Politics vs. {topic_name}",
+            title=title,
         )
         plot_path = output_path / _plot_filename(topic_name)
         figure.write_image(plot_path)
@@ -42,7 +51,7 @@ def main(raw_args=None):
                         help="Topic percentages CSV path")
     parser.add_argument("-o", "--output", default="out/topic_plots/",
                         help="Output directory for Plotly PNG files")
-    parser.add_argument("--min_rows", type=int, default=0,
+    parser.add_argument("--min-rows", type=int, default=0,
                         help="Exclude entries with fewer than this many rows")
     args = parser.parse_args(raw_args)
 
