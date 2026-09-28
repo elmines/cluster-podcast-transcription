@@ -8,7 +8,7 @@ import pandas as pd
 from rapidfuzz.fuzz import partial_ratio_alignment
 from transformers import PreTrainedTokenizerFast
 
-from .constants import AD_PATTERN
+from .constants import AD_PATT
 
 def map_key(map_func, k, dicts):
     def wrapped_map_func(d):
@@ -82,7 +82,19 @@ def preprocess(rows: Iterable[Dict[str, Any]]) -> Generator[Dict[str, Any], None
     # Eliminate rows with music
     rows = filter(lambda row: not _MUSIC_PATT.search(row['text']), rows)
     # Eliminate rows with ads
-    rows = filter(lambda row: not AD_PATTERN.search(row['text']), rows)
+
+    # verbose version, for debugging
+    def filter_func(row):
+        m = AD_PATT.search(row['text'])
+        if m:
+            print(m.group())
+            return False
+        return True
+    
+    # The real function (overrides that earlier definition)
+    filter_func = lambda row: not AD_PATT.search(row['text'])
+
+    rows = filter(filter_func, rows)
     # Clean up large blocks of whitespace created by any earlier subs
     # Probably not needed right now
     rows = map_key(lambda text: WHITE_PATT.sub(" ", text), "text", rows)
