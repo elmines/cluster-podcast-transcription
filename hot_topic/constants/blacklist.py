@@ -3,8 +3,13 @@ import re
 _AD_PATTS = [
     r"\.com",
     r"\.edu",
+
     r"Rasmussen University",
+    r"Rasmussen", # Too aggressive?
+
     r"Arizona State University",
+    r"ASU",
+
     r"US Bank Business Essential",
     r"Alpha Insurance",
     r"Hartford",
