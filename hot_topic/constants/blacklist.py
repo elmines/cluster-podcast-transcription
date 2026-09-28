@@ -3,13 +3,38 @@ import re
 _AD_PATTS = [
     r"\.com",
     r"\.edu",
+    r"\.org",
 
     r"Rasmussen University",
     r"Rasmussen", # Too aggressive?
 
+    r"T-Mobile",
+    r"T-Satellite",
+    r"Lem is",
+
+    r"VerboCare",
+    r"Verbo Care",
+    r"Verbo", # too aggressive?
+    r"Virbo",
+
+
+    r"MyFICO",
+    r"Orderly Meds",
+    r"Hollywood Feed",
+    r"Found",
+    r"Weight Watchers",
+    r"Instagram Teen Accounts",
+    r"Instagram teen accounts",
+    r"Because your playbook ensures your arena is always ready for tip-off",
+    r"Offering the products you need all in one place",
+    r"Amazon Hub Delivery",
+    r"Support After Abortion",
+    r"Ellie's Eden",
+    r"Azure Well",
+    r"Good and the Beautiful's Reading",
+
     r"Arizona State University",
     r"ASU",
-
     r"US Bank Business Essential",
     r"Alpha Insurance",
     r"Hartford",
@@ -37,6 +62,8 @@ _AD_PATTS = [
     r"Your choices matter\.",
     r"Let's get everyone home safely\.",
 
+    r"Zin", # nicotine patch
+
     r"Warning, this product contains nicotine\.",
     r"Nicotine is an addictive chemical\.",
 
@@ -52,9 +79,11 @@ _AD_PATTS = [
 
     r"Work in Progress is a podcast to help skilled migrants rebuild their careers in a new country",
 
-    r"I'm Jameeda Jamil and guests on my new podcast, Wrong Turns, share their most mortifying and hilarious disaster stories",
+    # r"I'm Jameeda Jamil and guests on my new podcast, Wrong Turns, share their most mortifying and hilarious disaster stories",
+    r"guests on my new podcast",
 
-    r"Listen now wherever you get your podcasts",
+    # r"Listen now wherever you get your podcasts",
+    r"wherever you get your podcasts",
 
     r"\[MUSIC\]",
     r"\[MUSIC PLAYING\]",

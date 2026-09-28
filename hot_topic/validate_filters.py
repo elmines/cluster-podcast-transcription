@@ -27,11 +27,12 @@ def main(raw_args=None):
             repl_list[m.group()].add(t)
 
     repl_count = {k:len(v) for k,v in repl_list.items()}
+    replacements = sorted(map(list, repl_count.items()), key=lambda pair: pair[1], reverse=True)
 
     missing = list(clean_patts - set(repl_count))
     json.dump({
         "missing": missing,
-        "replacements": repl_count
+        "replacements": replacements
     }, sys.stdout, indent=2)
 
 
