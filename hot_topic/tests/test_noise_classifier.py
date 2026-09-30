@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 
 from hot_topic.false_positives import (
+    length_sort_indices,
     original_fields,
     select_false_positives,
     sort_by_confidence,
@@ -72,6 +73,17 @@ class ClassBalancedSplitTests(unittest.TestCase):
 
 
 class FalsePositiveTests(unittest.TestCase):
+    def test_sorts_lines_by_descending_token_length_before_batching(self):
+        samples = [
+            {"input_ids": [1]},
+            {"input_ids": [1, 2, 3, 4, 5]},
+            {"input_ids": [1, 2]},
+            {"input_ids": [1, 2, 3, 4, 5, 6, 7, 8]},
+            {"input_ids": [1, 2, 3]},
+        ]
+        order = length_sort_indices(samples)
+        lengths = [len(samples[index]["input_ids"]) for index in order]
+        self.assertEqual(lengths, [8, 5, 3, 2, 1])
     def test_keeps_model_noise_predictions_the_silver_labels_missed_highest_confidence_first(self):
         rows = [
             {"start": "0", "end": "1", "text": "plain", "noise": "0", "source_csv": "a.csv"},

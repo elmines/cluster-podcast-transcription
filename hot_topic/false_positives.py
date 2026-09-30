@@ -5,9 +5,10 @@ import csv
 from itertools import batched
 from pathlib import Path
 
+import numpy as np
 import torch
 from tqdm import tqdm
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
+from transformers import AutoModelForSequenceClassification, AutoTokenizer, DataCollatorWithPadding
 
 from .silver_label import CONFIDENCE_FIELD, NOISE_FIELD, NOISE_LABEL, SOURCE_FIELD, transcript_paths
 
@@ -39,29 +40,39 @@ def sort_by_confidence(rows):
     return rows
 
 
-def predict_batch(model, tokenizer, texts, max_length: int, noise_index: int, device):
-    encoded = tokenizer(
-        texts,
-        truncation=True,
-        max_length=max_length,
-        padding=True,
-        return_tensors="pt",
-    )
-    model_inputs = {
-        "input_ids": encoded["input_ids"].to(device),
-        "attention_mask": encoded["attention_mask"].to(device),
-    }
-    logits = model(**model_inputs).logits
-    probabilities = torch.softmax(logits, dim=-1)
-    predictions = probabilities.argmax(dim=-1)
-    return probabilities[:, noise_index].tolist(), predictions.tolist()
+def length_sort_indices(samples):
+    """Descending token-length order, so each batch needs less padding."""
+    seq_lens = np.array([len(sample["input_ids"]) for sample in samples])
+    return np.flip(np.argsort(seq_lens)).tolist()
 
 
-def iter_silver_rows(root: Path):
+def score_rows(model, tokenizer, collator, rows, batch_size, max_length, noise_index, device):
+    tokenized = [
+        tokenizer(row["text"], truncation=True, max_length=max_length)
+        for row in rows
+    ]
+    sort_inds = length_sort_indices(tokenized)
+    tokenized = [tokenized[index] for index in sort_inds]
+    rows = [rows[index] for index in sort_inds]
+
+    probabilities = []
+    predictions = []
+    for samples in batched(tokenized, batch_size):
+        encoded = collator(list(samples))
+        batch = {key: value.to(device) for key, value in encoded.items()}
+        logits = model(**batch).logits
+        probs = torch.softmax(logits, dim=-1)
+        probabilities.extend(probs[:, noise_index].tolist())
+        predictions.extend(probs.argmax(dim=-1).tolist())
+    return select_false_positives(rows, probabilities, predictions, noise_index)
+
+
+def iter_silver_files(root: Path):
     paths = transcript_paths(root)
     if not paths:
         raise ValueError(f"no CSV files under {root}")
     fieldnames = None
+    found_rows = False
     for path in paths:
         with path.open(newline="") as source:
             reader = csv.DictReader(source)
@@ -73,8 +84,11 @@ def iter_silver_rows(root: Path):
                 fieldnames = list(reader.fieldnames)
             elif list(reader.fieldnames) != fieldnames:
                 raise ValueError(f"{path} columns {list(reader.fieldnames)} do not match {fieldnames}")
-            yield from reader
-    if fieldnames is None:
+            rows = list(reader)
+            if rows:
+                found_rows = True
+                yield rows
+    if not found_rows:
         raise ValueError(f"{root} has no labeled lines")
 
 
@@ -119,7 +133,7 @@ def main(raw_args=None):
     parser.add_argument("-o", "--output", default="out/ad_false_positives.csv", type=Path)
     parser.add_argument("--model", required=True, type=Path,
                         help="Directory saved by hot_topic.train_classifier")
-    parser.add_argument("--batch-size", default=64, type=int)
+    parser.add_argument("--batch-size", default=256, type=int)
     parser.add_argument("--max-length", default=256, type=int)
     parser.add_argument("--trust-remote-code", action="store_true")
     args = parser.parse_args(raw_args)
@@ -155,27 +169,26 @@ def main(raw_args=None):
     except ValueError as exc:
         parser.error(str(exc))
 
+    collator = DataCollatorWithPadding(tokenizer, return_tensors="pt")
     false_positives = []
     line_count = 0
+    try:
+        files = iter_silver_files(input_dir)
+    except ValueError as exc:
+        parser.error(str(exc))
     with torch.inference_mode():
-        try:
-            rows = iter_silver_rows(input_dir)
-        except ValueError as exc:
-            parser.error(str(exc))
-        for batch in tqdm(batched(rows, args.batch_size), desc="Predicting noise"):
-            batch = list(batch)
-            line_count += len(batch)
-            probabilities, predictions = predict_batch(
+        for rows in tqdm(files, desc="Predicting noise"):
+            line_count += len(rows)
+            false_positives.extend(score_rows(
                 model,
                 tokenizer,
-                [row["text"] for row in batch],
+                collator,
+                rows,
+                args.batch_size,
                 args.max_length,
                 noise_index,
                 device,
-            )
-            false_positives.extend(
-                select_false_positives(batch, probabilities, predictions, noise_index)
-            )
+            ))
 
     sort_by_confidence(false_positives)
     output_path = args.output.resolve()
