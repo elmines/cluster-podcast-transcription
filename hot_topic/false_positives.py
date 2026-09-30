@@ -73,7 +73,7 @@ def iter_silver_files(root: Path):
         raise ValueError(f"no CSV files under {root}")
     fieldnames = None
     found_rows = False
-    for path in paths:
+    for path in tqdm(paths, desc='Processing files'):
         with path.open(newline="") as source:
             reader = csv.DictReader(source)
             if reader.fieldnames is None:
@@ -177,7 +177,7 @@ def main(raw_args=None):
     except ValueError as exc:
         parser.error(str(exc))
     with torch.inference_mode():
-        for rows in tqdm(files, desc="Predicting noise"):
+        for rows in files:
             line_count += len(rows)
             false_positives.extend(score_rows(
                 model,

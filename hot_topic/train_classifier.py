@@ -159,7 +159,7 @@ def main(raw_args=None):
                         help="Directory of per-transcript silver-label CSVs")
     parser.add_argument("-o", "--output", default="out/noise_classifier", type=Path,
                         help="Directory to save the best model and tokenizer")
-    parser.add_argument("--model", default="distilbert-base-uncased",
+    parser.add_argument("--model", default="answerdotai/ModernBERT-base",
                         help="Any Hugging Face checkpoint AutoModelForSequenceClassification can load")
     parser.add_argument("--val-fraction", default=0.2, type=float)
     parser.add_argument("--seed", default=0, type=int)
