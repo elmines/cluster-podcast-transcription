@@ -7,10 +7,9 @@ from collections import defaultdict
 
 from tqdm import tqdm
 
-from .constants.blacklist import _AD_PATTS, AD_PATT
+from .constants.blacklist import AD_PATT
 
 def main(raw_args=None):
-    clean_patts = {p.replace('\\', '') for p in _AD_PATTS}
     if not raw_args:
         raw_args = sys.argv[1:]
 
@@ -29,9 +28,7 @@ def main(raw_args=None):
     repl_count = {k:len(v) for k,v in repl_list.items()}
     replacements = sorted(map(list, repl_count.items()), key=lambda pair: pair[1], reverse=True)
 
-    missing = list(clean_patts - set(repl_count))
     json.dump({
-        "missing": missing,
         "replacements": replacements
     }, sys.stdout, indent=2)
 
