@@ -29,7 +29,6 @@ _CASE_INSENS_PATTS = [
     r"Davis Gainesville Chevrolet GMC",
     r"Grainger",
     r"Kalshi", # This may be too strong--a lot of podcasts probably talk about Kalshi
-    r"Vanta ",
     r"V Pizza",
     r"Coke Florida",
     r"American Express Business Gold Card",
@@ -98,6 +97,7 @@ _CASE_INSENS_PATTS = [
 ]
 
 _CASE_AD_PATTS = [
+    r"Vanta",
     r"ASU",
     r"On Deck",
     r"Found",
