@@ -93,6 +93,84 @@ _AD_PATTS = [
     r"\(soft music\)",
 ]
 
-AD_PATT = re.compile('|'.join(_AD_PATTS))
+_AD_PATTS_2 = [
+    r"dot org",
+    r"dot edu",
+    r"dot com",
+    r"\[upbeat music\]",
+    r"\[singing in foreign language\]",
+    r"\[MUSIC",
+    r"\(MUSIC\)",
+    r"\(MUSIC PLAYS\)",
+    r"\(MUSIC PLAYING\)",
+    r"\(MUSIC CONTINUES\)",
+    r"\(upbeat drum music\)",
+    r"\(upbeat jazz music\)",
+    r"\(upbeat rock music\)",
+    r"\(sirens wailing\)"
+    r"\(upbeat bluegrass music\)",
+    r"\(rock music\)",
+    r"♪",
+    r"a championship combo",
+    r"isn't just a road, it's our workplace",
+    r"Your choices matter",
+    r"rasmussen",
+    r"Calshi",
+    r"Gainesville",
+    r"gainesville",
+    r"Burrito", # Capital only for Burrito factory
+    r"contains? nicotine",
+    r"an addictive chemical",
+    r"Warning\.",
+    r"Alpha insurance",
+    r"(a|A)mazon (h|H)ub (d|D)elivery",
+    r"Know a local business that will make a great partner",
+    r"A local coffee shop owner, florist, automotive shop, dry cleaner, you name it"
+    r"Arizona State",
+    r"Original American kitchen",
+    r"are sold near you",
+    r"Ellie Zedin",
+    r"Ellie's Eden",
+    r"AirMed",
+    r"packed with bold ingredients",
+    r"Coligan",
+    r"(The|V|B|Bee) Pizza",
+    r"(V|v)anta",
+    r"((w|W)herever|(a|A)nywhere|(e|E)verywhere) you (get|find) your podcast",
+    r"myFICO",
+    r"Advantage Business Program",
+    r"US Bank",
+    r"Kraft Mac and Cheese",
+    r"Perfect Bistro",
+    r"glp1",
+    r"(W|w)eight (W|w)atchers",
+    r"get everyone home safely"
+    r"Target Zero Initiative",
+    r"All American Kitchen",
+    r"On Deck",
+    r"Celtic Bank",
+    r"Simply Money",
+    r"beat any price",
+    r"Chevy Silverado",
+    r"GMC Sierra",
+    r"sell more so you save more",
+    r"you can get back to what matters most",
+    r"epending on certain loan attributes",
+    r"(m|M)(x|X) (b|B)usiness (g|G)old (c|C)ard",
+    r"uilt for business",
+    r"(t|T)opo (c|C)hico",
+    r"(A|a)(CAST|cast)",
+    r"opioid addiction is claiming lives",
+
+]
+
+_WHITELIST = [
+    r"@rasmussen_pole", # Is @ reserved in regex syntax?
+    r"Slow music\.",
+    r"Zeldin",
+    r"zeldin",
+]
+
+AD_PATT = re.compile('|'.join(_AD_PATTS + _AD_PATTS_2))
 
 __ALL__ = ["AD_PATT"]
