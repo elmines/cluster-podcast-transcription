@@ -164,7 +164,7 @@ def main(raw_args=None):
     parser.add_argument("--val-fraction", default=0.2, type=float)
     parser.add_argument("--seed", default=0, type=int)
     parser.add_argument("--epochs", default=10, type=int, help="Maximum epochs before early stopping")
-    parser.add_argument("--patience", default=3, type=int,
+    parser.add_argument("--patience", default=1, type=int,
                         help="Stop after this many validations without improved validation loss")
     parser.add_argument("--batch-size", default=16, type=int)
     parser.add_argument("--learning-rate", default=2e-5, type=float)

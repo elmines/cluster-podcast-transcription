@@ -8,7 +8,7 @@ import stat
 
 
 JOB_NAME = "silver_labels"
-DURATION = "8:00:00"
+DURATION = "3:00:00"
 CPUS = 4
 MEMORY = "24gb"
 
@@ -37,12 +37,11 @@ def build_script(repo_dir, partition, email):
 		[
 			"uv run python -m hot_topic.silver_label",
 			"uv run python -m hot_topic.train_classifier",
+			"uv run python -m hot_topic.false_positives",
 		]
 	)
 
 	return f"""#!/bin/bash
-
-set -euo pipefail
 
 #SBATCH --time={shell_quote(DURATION)}
 #SBATCH --job-name={shell_quote(JOB_NAME)}
