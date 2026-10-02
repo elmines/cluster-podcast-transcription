@@ -2,6 +2,7 @@
 
 import argparse
 import csv
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
 
 from tqdm import tqdm
@@ -36,6 +37,26 @@ def label_fieldnames(original_fields: list[str]) -> list[str]:
     return fieldnames
 
 
+def label_transcript(task):
+    path, destination, fieldnames = task
+    line_count = 0
+    noise_count = 0
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    source_csv = str(path.resolve())
+    with path.open(newline="") as source, destination.open("w", newline="") as handle:
+        reader = csv.DictReader(source)
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in reader:
+            noise = int(is_noise(row["text"]))
+            row[SOURCE_FIELD] = source_csv
+            row[NOISE_FIELD] = noise
+            writer.writerow(row)
+            line_count += 1
+            noise_count += noise
+    return line_count, noise_count
+
+
 def main(raw_args=None):
     parser = argparse.ArgumentParser(
         description="Silver-label transcript lines as noise using the blacklist patterns."
@@ -66,9 +87,8 @@ def main(raw_args=None):
         parser.error(f"no CSV files under {root}")
 
     fieldnames = None
-    line_count = 0
-    noise_count = 0
-    for path in tqdm(paths, desc="Silver-labeling transcripts"):
+    tasks = []
+    for path in paths:
         with path.open(newline="") as source:
             reader = csv.DictReader(source)
             if reader.fieldnames is None:
@@ -81,20 +101,18 @@ def main(raw_args=None):
                 fieldnames = file_fieldnames
             elif file_fieldnames != fieldnames:
                 parser.error(f"{path} columns {original_fields} do not match {fieldnames}")
+            tasks.append((path, silver_output_path(root, output_dir, path), fieldnames))
 
-            destination = silver_output_path(root, output_dir, path)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            source_csv = str(path.resolve())
-            with destination.open("w", newline="") as handle:
-                writer = csv.DictWriter(handle, fieldnames=fieldnames)
-                writer.writeheader()
-                for row in reader:
-                    noise = int(is_noise(row["text"]))
-                    row[SOURCE_FIELD] = source_csv
-                    row[NOISE_FIELD] = noise
-                    writer.writerow(row)
-                    line_count += 1
-                    noise_count += noise
+    line_count = 0
+    noise_count = 0
+    worker_count = max(1, cpu_count() - 1)
+    with Pool(worker_count) as pool:
+        results = pool.imap_unordered(label_transcript, tasks)
+        for local_line_count, local_noise_count in tqdm(
+            results, total=len(tasks), desc="Silver-labeling transcripts"
+        ):
+            line_count += local_line_count
+            noise_count += local_noise_count
 
     print(
         f"Labeled {line_count} lines from {len(paths)} files "
