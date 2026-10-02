@@ -4,7 +4,6 @@ import pdb
 import csv
 import re
 from multiprocessing import Pool, cpu_count
-from operator import itemgetter
 from collections import defaultdict
 
 from tqdm import tqdm
