@@ -131,7 +131,7 @@ def main(raw_args=None):
     parser.add_argument("-i", "--input", default="out/silver_labels", type=Path,
                         help="Directory of per-transcript silver-label CSVs")
     parser.add_argument("-o", "--output", default="out/ad_false_positives.csv", type=Path)
-    parser.add_argument("--model", required=True, type=Path,
+    parser.add_argument("--model", default='out/noise_classifier', type=Path,
                         help="Directory saved by hot_topic.train_classifier")
     parser.add_argument("--batch-size", default=256, type=int)
     parser.add_argument("--max-length", default=256, type=int)
