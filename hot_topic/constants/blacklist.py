@@ -2,7 +2,7 @@ import re
 
 _CASE_INSENS_PATTS = [
     # Websites
-    r"(dot|\.) ?(com|edu|org|net)"
+    r"(dot|\.) ?(com|edu|org|net)",
 
     # University ads
     r"rasmussen", # Too aggressive?
@@ -14,7 +14,7 @@ _CASE_INSENS_PATTS = [
     r"championship combo",
 
     # Locality Name
-    r"alachua"
+    r"alachua",
     r"gainesville",
 
     # Local Businesses
@@ -50,7 +50,7 @@ _CASE_INSENS_PATTS = [
     r"Azure Well",
     r"And with Fin, we've built the number one AI agent for customer service",
     r"Know a local business that will make a great partner",
-    r"A local coffee shop owner, florist, automotive shop, dry cleaner, you name it"
+    r"A local coffee shop owner, florist, automotive shop, dry cleaner, you name it",
     r"are sold near you",
     r"MX Business Gold Card",
     r"ACAST",
@@ -65,7 +65,7 @@ _CASE_INSENS_PATTS = [
     r"AirMed",
     r"Good and the Beautiful's Reading",
     r"P(er|urr)fect Bistro",
-    r"get everyone home safely"
+    r"get everyone home safely",
     r"beat any price",
     r"sell more so you save more",
     r"you can get back to what matters most",
@@ -106,7 +106,6 @@ _CASE_AD_PATTS = [
     r"US Bank", # Too short 
     r"Work in Progress",
     r"Topo Chico",
-    r"Your choices matter",
     r"Vanta", # Case-sensitive because it could be part of a larger word
     r"ASU",   # Same goes for an acronmy
     r"On Deck",
