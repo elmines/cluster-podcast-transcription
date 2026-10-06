@@ -12,8 +12,9 @@ from uuid import uuid4
 from tqdm import tqdm
 from vllm import AsyncLLMEngine, SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm.renderers import ChatParams, BaseRenderer
 
-from .vllm_utils import make_structured_outputs_params
+from .vllm_utils import make_structured_outputs_params, make_ans_extraction
 
 
 MODEL_NAME = "openai/gpt-oss-120b"
@@ -80,7 +81,8 @@ def warning(path, message):
     print(f"{path.name}: Warning: {message}", file=sys.stderr)
 
 
-def extract_json_object(text, path):
+def extract_json_object(text, path, extract_answer):
+    text = extract_answer(text)
     decoder = json.JSONDecoder()
     for match in re.finditer(r"\{", text):
         try:
@@ -135,28 +137,37 @@ async def generate_text(engine, prompt, sampling_params, request_id):
         final_output = output
     if final_output is None:
         raise RuntimeError(f"no output received for request {request_id}")
-    return final_output.outputs[0].text
+    x = final_output.outputs[0].text
+    # print(f"{request_id}: {x}")
+    return x
 
 
-async def label_transcript(engine, input_path, sampling_params):
+async def label_transcript(engine, renderer: BaseRenderer, input_path, sampling_params, extract_answer):
     rows = read_transcript(input_path)
     all_spans = []
     chunks = transcript_chunks(rows) if rows else []
+    rendered_prompts = [
+        renderer.render_chat(
+            [[
+                {"role": "system", "content": SYSTEM_PROMPT},
+                {"role": "user", "content": USER_PROMPT + format_transcript(chunk, offset)},
+            ]],
+            ChatParams(),
+        )[1][0]
+        for offset, chunk in chunks
+    ]
     requests = [
         generate_text(
             engine,
-            [
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": USER_PROMPT + format_transcript(chunk, offset)},
-            ],
+            rendered_prompt,
             sampling_params,
             f"{input_path.name}-{uuid4()}",
         )
-        for offset, chunk in chunks
+        for rendered_prompt in rendered_prompts
     ]
     responses = await asyncio.gather(*requests)
     for (offset, chunk), response in zip(chunks, responses):
-        payload = extract_json_object(response, input_path)
+        payload = extract_json_object(response, input_path, extract_answer)
         all_spans.extend(validate_spans(payload, len(chunk), offset, input_path))
     return {
         "source": str(input_path),
@@ -200,8 +211,9 @@ async def run(args, input_files, output_dir):
             reasoning=False,
         ),
     )
+    extract_answer = make_ans_extraction(args.model)
     async def process(path):
-        return path, await label_transcript(engine, path, sampling_params)
+        return path, await label_transcript(engine, engine.renderer, path, sampling_params, extract_answer)
 
     tasks = [asyncio.create_task(process(path)) for path in input_files]
     with tqdm(total=len(tasks), desc="Writing transcripts") as progress:
@@ -219,9 +231,9 @@ def main(raw_args=None):
     parser = argparse.ArgumentParser(description="Extract advertising spans from transcript CSVs")
     parser.add_argument("-i", "--input", dest="inputs", nargs="+", required=True, type=Path,
                         help="Transcript CSV files under --root")
-    parser.add_argument("--root", required=True, type=Path,
+    parser.add_argument("--root", default=Path("out/whisper_segmented"), type=Path,
                         help="Root directory under which every --input file must be found")
-    parser.add_argument("-o", "--output", required=True, type=Path,
+    parser.add_argument("-o", "--output", default=Path("out/ad_spans"), type=Path,
                         help="Directory for JSON outputs, mirroring --root")
     parser.add_argument("--model", default=MODEL_NAME)
     parser.add_argument("--max-model-len", type=int, default=MAX_MODEL_LEN)

@@ -41,3 +41,18 @@ def make_structured_outputs_params(model_name: str,
         return StructuredOutputsParams(structural_tag=json.dumps(structural_tag.model_dump()))
     else:
         raise ValueError(f"Unsupported model {model_name}")
+
+def make_ans_extraction(model_name):
+    if 'gpt-oss' in model_name:
+        GPT_SENTINEL = 'assistantfinal'
+        def f(text):
+            if ((left_index := text.find(GPT_SENTINEL)) == -1):
+                return ''
+            # Only take the "first final answer"
+            content_start = left_index + len(GPT_SENTINEL)
+            if ((right_index := text.find('assistant', content_start)) == -1):
+                return text[content_start:]
+            return text[content_start:right_index]
+    else:
+        f = lambda x: x
+    return lambda x: f(x).strip()
