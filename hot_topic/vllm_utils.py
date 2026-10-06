@@ -11,6 +11,7 @@ def make_structured_outputs_params(model_name: str,
                                    grammar: Optional[str] = None,
                                    regex: Optional[str] = None,
                                    json_schema: Optional[str | dict] = None,
+                                   reasoning: bool = False,
                                    ) -> StructuredOutputsParams:
     if sum(bool(x) for x in [grammar, regex, json_schema]) != 1:
         raise ValueError("Must specifiy exactly one of {grammar, regex}")
@@ -22,7 +23,7 @@ def make_structured_outputs_params(model_name: str,
             "harmony",
             tools=[],
             tool_choice="none",
-            reasoning=True,
+            reasoning=reasoning,
         )
         structural_tag = copy.deepcopy(structural_tag)
 
