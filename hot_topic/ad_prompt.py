@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from uuid import uuid4
 
+from tqdm import tqdm
 from vllm import AsyncLLMEngine, SamplingParams
 from vllm.engine.arg_utils import AsyncEngineArgs
 
@@ -203,14 +204,15 @@ async def run(args, input_files, output_dir):
         return path, await label_transcript(engine, path, sampling_params)
 
     tasks = [asyncio.create_task(process(path)) for path in input_files]
-    for task in asyncio.as_completed(tasks):
-        input_path, result = await task
-        destination = output_path(args.root.resolve(), output_dir, input_path)
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        with destination.open("w", encoding="utf-8") as stream:
-            json.dump(result, stream, indent=2)
-            stream.write("\n")
-        print(f"Wrote {destination}")
+    with tqdm(total=len(tasks), desc="Writing transcripts") as progress:
+        for task in asyncio.as_completed(tasks):
+            input_path, result = await task
+            destination = output_path(args.root.resolve(), output_dir, input_path)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            with destination.open("w", encoding="utf-8") as stream:
+                json.dump(result, stream, indent=2)
+                stream.write("\n")
+            progress.update(1)
 
 
 def main(raw_args=None):
