@@ -6,6 +6,7 @@ import csv
 import json
 import re
 import sys
+from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
 
@@ -131,21 +132,54 @@ def transcript_chunks(rows):
     return [(offset, rows[offset:offset + MAX_LINES_PER_REQUEST]) for offset in range(0, len(rows), step)]
 
 
+# async def generate_text(engine, prompt, sampling_params, request_id):
+    # final_output = None
+    # outputs = []
+    # async for output in engine.generate(prompt, sampling_params, request_id):
+        # outputs.append(output)
+        # final_output = output
+    # if final_output is None:
+        # raise RuntimeError(f"no output received for request {request_id}")
+    # x = final_output.outputs[0].text
+    # print(f"{request_id}: {x}")
+    # return x
+
 async def generate_text(engine, prompt, sampling_params, request_id):
     final_output = None
+
     async for output in engine.generate(prompt, sampling_params, request_id):
         final_output = output
+
+        completion = output.outputs[0]
+
+        # print(
+        #     f"\n[{request_id}] "
+        #     f"finished={output.finished} "
+        #     f"n_tokens={len(completion.token_ids)} "
+        #     f"text={completion.text!r} "
+        #     f"finish_reason={completion.finish_reason!r} "
+        #     f"stop_reason={completion.stop_reason!r}"
+        # )
+
     if final_output is None:
         raise RuntimeError(f"no output received for request {request_id}")
-    x = final_output.outputs[0].text
-    # print(f"{request_id}: {x}")
-    return x
 
+    completion = final_output.outputs[0]
+
+    # print(
+    #     f"[FINAL {request_id}] "
+    #     f"tokens={completion.token_ids} "
+    #     f"text={completion.text!r} "
+    #     f"finish_reason={completion.finish_reason!r}"
+    # )
+
+    return completion.text
 
 async def label_transcript(engine, renderer: BaseRenderer, input_path, sampling_params, extract_answer):
     rows = read_transcript(input_path)
     all_spans = []
     chunks = transcript_chunks(rows) if rows else []
+    tokenize_params = replace(renderer.default_chat_tok_params, needs_detokenization=True)
     rendered_prompts = [
         renderer.render_chat(
             [[
@@ -153,6 +187,7 @@ async def label_transcript(engine, renderer: BaseRenderer, input_path, sampling_
                 {"role": "user", "content": USER_PROMPT + format_transcript(chunk, offset)},
             ]],
             ChatParams(),
+            tokenize_params,
         )[1][0]
         for offset, chunk in chunks
     ]
@@ -205,11 +240,12 @@ async def run(args, input_files, output_dir):
     sampling_params = SamplingParams(
         temperature=0.0,
         max_tokens=args.max_new_tokens,
-        structured_outputs=make_structured_outputs_params(
-            args.model,
-            json_schema=AD_SPAN_SCHEMA,
-            reasoning=False,
-        ),
+
+        # structured_outputs=make_structured_outputs_params(
+        #     args.model,
+        #     json_schema=AD_SPAN_SCHEMA,
+        #     reasoning=False,
+        # ),
     )
     extract_answer = make_ans_extraction(args.model)
     async def process(path):
