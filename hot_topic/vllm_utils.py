@@ -11,7 +11,7 @@ def make_structured_outputs_params(model_name: str,
                                    grammar: Optional[str] = None,
                                    regex: Optional[str] = None,
                                    json_schema: Optional[str | dict] = None,
-                                   reasoning: bool = False,
+                                   reasoning: bool = True,
                                    ) -> StructuredOutputsParams:
     if sum(bool(x) for x in [grammar, regex, json_schema]) != 1:
         raise ValueError("Must specifiy exactly one of {grammar, regex}")
