@@ -6,7 +6,7 @@ import csv
 import json
 import re
 import sys
-from dataclasses import replace
+import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -219,18 +219,24 @@ async def run(args, input_files, output_dir):
         destination = output_path(args.root.resolve(), output_dir, path)
         if destination.exists():
             print(f"Skipping transcript {path}: output already exists at {destination}")
-            return
+            return 0
         result = await label_transcript(engine, engine.renderer, path, sampling_params, extract_answer)
         destination.parent.mkdir(parents=True, exist_ok=True)
         with destination.open("w", encoding="utf-8") as stream:
             json.dump(result, stream, indent=2)
             stream.write("\n")
+        return 1
 
+    n_transcribed = 0
+    duration = -time.time()
     tasks = [asyncio.create_task(process(path)) for path in input_files]
     with tqdm(total=len(tasks), desc="Writing transcripts") as progress:
         for task in asyncio.as_completed(tasks):
-            await task
+            n_transcribed += await task
             progress.update(1)
+    duration += time.time()
+    print("n_transcribed", "duration", sep=',')
+    print(n_transcribed, duration, sep=',')
 
 
 def main(raw_args=None):
