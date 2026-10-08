@@ -4,6 +4,8 @@ import argparse
 import asyncio
 import csv
 import json
+from collections import Counter
+from multiprocessing import Pool, cpu_count
 import re
 import sys
 import time
@@ -13,15 +15,13 @@ from uuid import uuid4
 
 from tqdm import tqdm
 from vllm import AsyncLLMEngine, SamplingParams
+from vllm.config import DeviceConfig, ModelConfig, VllmConfig
 from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.renderers import ChatParams, BaseRenderer
+from vllm.renderers import ChatParams, BaseRenderer, renderer_from_config
 
 from .vllm_utils import make_structured_outputs_params, make_ans_extraction
 
 
-MODEL_NAME = "openai/gpt-oss-120b"
-MAX_MODEL_LEN = 32768
-MAX_NEW_TOKENS = 2048
 MAX_LINES_PER_REQUEST = 300
 CHUNK_OVERLAP = 24
 
@@ -128,9 +128,71 @@ def merge_spans(spans):
     return merged
 
 
-def transcript_chunks(rows):
-    step = max(1, MAX_LINES_PER_REQUEST - CHUNK_OVERLAP)
-    return [(offset, rows[offset:offset + MAX_LINES_PER_REQUEST]) for offset in range(0, len(rows), step)]
+def render_chunk(renderer, offset, chunk):
+    return renderer.render_chat(
+        [[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": USER_PROMPT + format_transcript(chunk, offset)},
+        ]],
+        ChatParams(chat_template_kwargs={"add_generation_prompt": True}),
+    )[1][0]
+
+
+def prompt_token_count(rendered_prompt):
+    try:
+        return len(rendered_prompt["prompt_token_ids"])
+    except (KeyError, TypeError):
+        return len(rendered_prompt.prompt_token_ids)
+
+
+def truncate_chunk_line(renderer, offset, chunk, max_prompt_tokens, path):
+    row = chunk[0]
+    text = row["text"]
+    low, high = 0, len(text)
+    best = None
+    while low <= high:
+        middle = (low + high) // 2
+        candidate = [dict(row, text=text[:middle])]
+        rendered_prompt = render_chunk(renderer, offset, candidate)
+        if prompt_token_count(rendered_prompt) <= max_prompt_tokens:
+            best = (candidate, rendered_prompt)
+            low = middle + 1
+        else:
+            high = middle - 1
+    if best is None:
+        raise ValueError(
+            f"cannot fit even an empty transcript line in the prompt budget for {path}"
+        )
+    warning(path, "truncated a transcript line to fit the prompt token budget")
+    return best
+
+
+def transcript_chunks(rows, renderer, max_model_len, max_new_tokens, path):
+    max_prompt_tokens = max_model_len - max_new_tokens
+    if max_prompt_tokens < 1:
+        raise ValueError("max_model_len must be greater than max_new_tokens")
+
+    chunks = []
+    offset = 0
+    while offset < len(rows):
+        line_count = min(MAX_LINES_PER_REQUEST, len(rows) - offset)
+        while line_count > 1:
+            chunk = rows[offset:offset + line_count]
+            rendered_prompt = render_chunk(renderer, offset, chunk)
+            if prompt_token_count(rendered_prompt) <= max_prompt_tokens:
+                break
+            line_count -= 1
+        else:
+            chunk = rows[offset:offset + 1]
+            rendered_prompt = render_chunk(renderer, offset, chunk)
+            if prompt_token_count(rendered_prompt) > max_prompt_tokens:
+                chunk, rendered_prompt = truncate_chunk_line(
+                    renderer, offset, chunk, max_prompt_tokens, path
+                )
+
+        chunks.append((offset, chunk, rendered_prompt))
+        offset += max(1, len(chunk) - CHUNK_OVERLAP)
+    return chunks
 
 
 async def generate_text(engine, prompt, sampling_params, request_id):
@@ -144,22 +206,16 @@ async def generate_text(engine, prompt, sampling_params, request_id):
     completion = final_output.outputs[0]
     return completion.text
 
-async def label_transcript(engine, renderer: BaseRenderer, input_path, sampling_params, extract_answer):
+async def label_transcript(
+    engine, renderer: BaseRenderer, input_path, sampling_params,
+    extract_answer, max_model_len, max_new_tokens,
+):
     rows = read_transcript(input_path)
     all_spans = []
-    chunks = transcript_chunks(rows) if rows else []
-
-    rendered_objects = [
-        renderer.render_chat(
-            [[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": USER_PROMPT + format_transcript(chunk, offset)},
-            ]],
-            ChatParams(chat_template_kwargs={"add_generation_prompt": True}),
-        )
-        for offset, chunk in chunks
-    ]
-    rendered_prompts = [o[1][0] for o in rendered_objects]
+    chunks = transcript_chunks(
+        rows, renderer, max_model_len, max_new_tokens, input_path
+    ) if rows else []
+    rendered_prompts = [rendered_prompt for _, _, rendered_prompt in chunks]
     requests = [
         generate_text(
             engine,
@@ -170,7 +226,7 @@ async def label_transcript(engine, renderer: BaseRenderer, input_path, sampling_
         for rendered_prompt in rendered_prompts
     ]
     responses = await asyncio.gather(*requests)
-    for (offset, chunk), response in zip(chunks, responses):
+    for (offset, chunk, _), response in zip(chunks, responses):
         payload = extract_json_object(response, input_path, extract_answer)
         all_spans.extend(validate_spans(payload, len(chunk), offset, input_path))
     return {
@@ -198,6 +254,69 @@ def output_path(root, output_dir, input_path):
     return (output_dir / relative).with_suffix(".json")
 
 
+def make_renderer(args):
+    model_config = ModelConfig(
+        model=args.model,
+        max_model_len=args.max_model_len,
+    )
+    config = VllmConfig(
+        model_config=model_config,
+        device_config=DeviceConfig(device="cpu"),
+    )
+    return renderer_from_config(config)
+
+
+_ESTIMATE_RENDERER = None
+_ESTIMATE_MAX_MODEL_LEN = None
+_ESTIMATE_MAX_NEW_TOKENS = None
+
+
+def initialize_estimator(model, max_model_len, max_new_tokens):
+    global _ESTIMATE_RENDERER, _ESTIMATE_MAX_MODEL_LEN, _ESTIMATE_MAX_NEW_TOKENS
+    _ESTIMATE_RENDERER = make_renderer(
+        argparse.Namespace(model=model, max_model_len=max_model_len)
+    )
+    _ESTIMATE_MAX_MODEL_LEN = max_model_len
+    _ESTIMATE_MAX_NEW_TOKENS = max_new_tokens
+
+
+def estimate_file_token_lengths(input_path):
+    rows = read_transcript(input_path)
+    chunks = transcript_chunks(
+        rows,
+        _ESTIMATE_RENDERER,
+        _ESTIMATE_MAX_MODEL_LEN,
+        _ESTIMATE_MAX_NEW_TOKENS,
+        input_path,
+    ) if rows else []
+    frequencies = Counter()
+    for _, _, rendered_prompt in chunks:
+        token_count = prompt_token_count(rendered_prompt)
+        frequencies[token_count // 5000 * 5000] += 1
+    return frequencies
+
+
+def estimate_token_lengths(args, input_files):
+    frequencies = Counter()
+    worker_count = min(args.num_workers, len(input_files))
+    with Pool(
+        processes=worker_count,
+        initializer=initialize_estimator,
+        initargs=(args.model, args.max_model_len, args.max_new_tokens),
+    ) as pool:
+        for file_frequencies in tqdm(
+            pool.imap_unordered(estimate_file_token_lengths, input_files),
+            total=len(input_files),
+            desc="Counting tokens from chunks in input files",
+        ):
+            frequencies.update(file_frequencies)
+
+    writer = csv.writer(sys.stdout)
+    writer.writerow(("token_length", "count"))
+    for bucket_start in sorted(frequencies):
+        writer.writerow((f"{bucket_start}-{bucket_start + 5000}", frequencies[bucket_start]))
+
+
 async def run(args, input_files, output_dir):
     tensor_parallel_size = args.tensor_parallel_size
     engine_args = AsyncEngineArgs(
@@ -223,7 +342,15 @@ async def run(args, input_files, output_dir):
         if destination.exists():
             print(f"Skipping transcript {path}: output already exists at {destination}")
             return 0
-        result = await label_transcript(engine, engine.renderer, path, sampling_params, extract_answer)
+        result = await label_transcript(
+            engine,
+            engine.renderer,
+            path,
+            sampling_params,
+            extract_answer,
+            args.max_model_len,
+            args.max_new_tokens,
+        )
         destination.parent.mkdir(parents=True, exist_ok=True)
         with destination.open("w", encoding="utf-8") as stream:
             json.dump(result, stream, indent=2)
@@ -252,16 +379,29 @@ def main(raw_args=None):
                         help="Root directory under which every --input file must be found")
     parser.add_argument("-o", "--output", default=Path("out/ad_spans"), type=Path,
                         help="Directory for JSON outputs, mirroring --root")
-    parser.add_argument("--model", default=MODEL_NAME)
-    parser.add_argument("--max-model-len", type=int, default=MAX_MODEL_LEN)
-    parser.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
+    parser.add_argument("--model", default="openai/gpt-oss-120b")
+    parser.add_argument("--max-model-len", type=int, default=32768)
+    parser.add_argument("--max-new-tokens", type=int, default=2048)
     parser.add_argument("--max-num-seqs", type=int, default=1)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.95)
     parser.add_argument("--tensor-parallel-size", type=int, default=torch.cuda.device_count())
+    parser.add_argument(
+        "--num-workers",
+        type=int,
+        default=min(4, cpu_count() - 1),
+        help="Worker processes for CPU-side transcript preparation",
+    )
+    parser.add_argument(
+        "--estimate-tokens",
+        action="store_true",
+        help="Count prompt lengths without creating an LLM engine",
+    )
     args = parser.parse_args(raw_args)
 
-    if args.max_model_len < 1 or args.max_new_tokens < 1 or args.max_num_seqs < 1:
-        parser.error("model length, token count, and max sequence count must be positive")
+    if args.max_model_len < 1 or args.max_new_tokens < 1 or args.max_num_seqs < 1 or args.num_workers < 1:
+        parser.error("model length, token count, sequence count, and worker count must be positive")
+    if args.max_model_len <= args.max_new_tokens:
+        parser.error("--max-model-len must be greater than --max-new-tokens")
     if not 0 < args.gpu_memory_utilization <= 1:
         parser.error("--gpu-memory-utilization must be in (0, 1]")
 
@@ -276,7 +416,10 @@ def main(raw_args=None):
     except ValueError as exc:
         parser.error(str(exc))
 
-    asyncio.run(run(args, input_files, output_dir))
+    if args.estimate_tokens:
+        estimate_token_lengths(args, input_files)
+    else:
+        asyncio.run(run(args, input_files, output_dir))
 
 
 if __name__ == "__main__":
