@@ -145,7 +145,7 @@ def main(raw_args=None):
 						help="Directory containing span JSON files")
 	parser.add_argument("-o", "--output", default=Path("out/ad_plots"), type=Path,
 						help="Directory for generated HTML plots")
-	parser.add_argument("--skip_finisned", action="store_true",
+	parser.add_argument("--skip-finished", action="store_true",
 						help="Skip plots whose output HTML file already exists")
 	args = parser.parse_args(raw_args)
 
@@ -164,7 +164,7 @@ def main(raw_args=None):
 		if not span_path.is_file():
 			print(f"Warning: missing advertising spans file: {span_path}")
 			continue
-		if args.skip_finisned and output_path.exists():
+		if args.skip_finished and output_path.exists():
 			continue
 		figure = plot_ad_spans(transcript_path, span_path)
 		output_path.parent.mkdir(parents=True, exist_ok=True)
