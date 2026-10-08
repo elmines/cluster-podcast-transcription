@@ -17,6 +17,7 @@ from tqdm import tqdm
 from vllm import AsyncLLMEngine, SamplingParams
 from vllm.config import DeviceConfig, ModelConfig, VllmConfig
 from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm.exceptions import VLLMValidationError
 from vllm.renderers import ChatParams, BaseRenderer, renderer_from_config
 
 from .vllm_utils import make_structured_outputs_params, make_ans_extraction
@@ -145,6 +146,13 @@ def prompt_token_count(rendered_prompt):
         return len(rendered_prompt.prompt_token_ids)
 
 
+def try_render_chunk(renderer, offset, chunk):
+    try:
+        return render_chunk(renderer, offset, chunk)
+    except VLLMValidationError:
+        return None
+
+
 def truncate_chunk_line(renderer, offset, chunk, max_prompt_tokens, path):
     row = chunk[0]
     text = row["text"]
@@ -153,8 +161,8 @@ def truncate_chunk_line(renderer, offset, chunk, max_prompt_tokens, path):
     while low <= high:
         middle = (low + high) // 2
         candidate = [dict(row, text=text[:middle])]
-        rendered_prompt = render_chunk(renderer, offset, candidate)
-        if prompt_token_count(rendered_prompt) <= max_prompt_tokens:
+        rendered_prompt = try_render_chunk(renderer, offset, candidate)
+        if rendered_prompt is not None and prompt_token_count(rendered_prompt) <= max_prompt_tokens:
             best = (candidate, rendered_prompt)
             low = middle + 1
         else:
@@ -168,6 +176,9 @@ def truncate_chunk_line(renderer, offset, chunk, max_prompt_tokens, path):
 
 
 def transcript_chunks(rows, renderer, max_model_len, max_new_tokens, path):
+    renderer_model_len = getattr(getattr(renderer, "model_config", None), "max_model_len", None)
+    if renderer_model_len is not None:
+        max_model_len = min(max_model_len, renderer_model_len)
     max_prompt_tokens = max_model_len - max_new_tokens
     if max_prompt_tokens < 1:
         raise ValueError("max_model_len must be greater than max_new_tokens")
@@ -178,14 +189,14 @@ def transcript_chunks(rows, renderer, max_model_len, max_new_tokens, path):
         line_count = min(MAX_LINES_PER_REQUEST, len(rows) - offset)
         while line_count > 1:
             chunk = rows[offset:offset + line_count]
-            rendered_prompt = render_chunk(renderer, offset, chunk)
-            if prompt_token_count(rendered_prompt) <= max_prompt_tokens:
+            rendered_prompt = try_render_chunk(renderer, offset, chunk)
+            if rendered_prompt is not None and prompt_token_count(rendered_prompt) <= max_prompt_tokens:
                 break
             line_count -= 1
         else:
             chunk = rows[offset:offset + 1]
-            rendered_prompt = render_chunk(renderer, offset, chunk)
-            if prompt_token_count(rendered_prompt) > max_prompt_tokens:
+            rendered_prompt = try_render_chunk(renderer, offset, chunk)
+            if rendered_prompt is None or prompt_token_count(rendered_prompt) > max_prompt_tokens:
                 chunk, rendered_prompt = truncate_chunk_line(
                     renderer, offset, chunk, max_prompt_tokens, path
                 )
@@ -290,31 +301,39 @@ def estimate_file_token_lengths(input_path):
         input_path,
     ) if rows else []
     frequencies = Counter()
+    maximum = 0
     for _, _, rendered_prompt in chunks:
-        token_count = prompt_token_count(rendered_prompt)
+        token_count = prompt_token_count(rendered_prompt) + _ESTIMATE_MAX_NEW_TOKENS
         frequencies[token_count // 5000 * 5000] += 1
-    return frequencies
+        maximum = max(maximum, token_count)
+    return frequencies, maximum
 
 
 def estimate_token_lengths(args, input_files):
     frequencies = Counter()
+    maximum = 0
     worker_count = min(args.num_workers, len(input_files))
     with Pool(
         processes=worker_count,
         initializer=initialize_estimator,
         initargs=(args.model, args.max_model_len, args.max_new_tokens),
     ) as pool:
-        for file_frequencies in tqdm(
+        for file_frequencies, file_maximum in tqdm(
             pool.imap_unordered(estimate_file_token_lengths, input_files),
             total=len(input_files),
             desc="Counting tokens from chunks in input files",
         ):
             frequencies.update(file_frequencies)
+            maximum = max(maximum, file_maximum)
 
     writer = csv.writer(sys.stdout)
     writer.writerow(("token_length", "count"))
-    for bucket_start in sorted(frequencies):
+    bucket_starts = sorted(frequencies)
+    for bucket_start in bucket_starts[:-1]:
         writer.writerow((f"{bucket_start}-{bucket_start + 5000}", frequencies[bucket_start]))
+    if bucket_starts:
+        bucket_start = bucket_starts[-1]
+        writer.writerow((f"{bucket_start}-{maximum}", frequencies[bucket_start]))
 
 
 async def run(args, input_files, output_dir):
@@ -380,15 +399,15 @@ def main(raw_args=None):
     parser.add_argument("-o", "--output", default=Path("out/ad_spans"), type=Path,
                         help="Directory for JSON outputs, mirroring --root")
     parser.add_argument("--model", default="openai/gpt-oss-120b")
-    parser.add_argument("--max-model-len", type=int, default=32768)
-    parser.add_argument("--max-new-tokens", type=int, default=2048)
+    parser.add_argument("--max-model-len", type=int, default=1 << 14)
+    parser.add_argument("--max-new-tokens", type=int, default=1 << 11)
     parser.add_argument("--max-num-seqs", type=int, default=1)
-    parser.add_argument("--gpu-memory-utilization", type=float, default=0.95)
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
     parser.add_argument("--tensor-parallel-size", type=int, default=torch.cuda.device_count())
     parser.add_argument(
         "--num-workers",
         type=int,
-        default=min(4, cpu_count() - 1),
+        default=min(1, cpu_count() - 1),
         help="Worker processes for CPU-side transcript preparation",
     )
     parser.add_argument(
