@@ -342,6 +342,7 @@ async def run(args, input_files, output_dir):
         model=args.model,
         max_model_len=args.max_model_len,
         max_num_seqs=args.max_num_seqs,
+        max_num_batched_tokens=args.max_num_batched_tokens,
         gpu_memory_utilization=args.gpu_memory_utilization,
         tensor_parallel_size=tensor_parallel_size
     )
@@ -349,11 +350,12 @@ async def run(args, input_files, output_dir):
     sampling_params = SamplingParams(
         temperature=0.0,
         max_tokens=args.max_new_tokens,
-        structured_outputs=make_structured_outputs_params(
-            args.model,
-            json_schema=AD_SPAN_SCHEMA,
-            reasoning=False
-        ),
+
+        # structured_outputs=make_structured_outputs_params(
+        #     args.model,
+        #     json_schema=AD_SPAN_SCHEMA,
+        #     reasoning=False
+        # ),
     )
     extract_answer = make_ans_extraction(args.model)
     async def process(path):
@@ -400,9 +402,10 @@ def main(raw_args=None):
                         help="Directory for JSON outputs, mirroring --root")
     parser.add_argument("--model", default="openai/gpt-oss-120b")
     parser.add_argument("--max-model-len", type=int, default=1 << 14)
+    parser.add_argument("--max-num-batched-tokens", type=int, default=1 << 13)
     parser.add_argument("--max-new-tokens", type=int, default=1 << 11)
     parser.add_argument("--max-num-seqs", type=int, default=1)
-    parser.add_argument("--gpu-memory-utilization", type=float, default=0.90)
+    parser.add_argument("--gpu-memory-utilization", type=float, default=0.85)
     parser.add_argument("--tensor-parallel-size", type=int, default=torch.cuda.device_count())
     parser.add_argument(
         "--num-workers",
