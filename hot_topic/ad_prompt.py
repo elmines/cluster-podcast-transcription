@@ -216,17 +216,20 @@ async def run(args, input_files, output_dir):
     )
     extract_answer = make_ans_extraction(args.model)
     async def process(path):
-        return path, await label_transcript(engine, engine.renderer, path, sampling_params, extract_answer)
+        destination = output_path(args.root.resolve(), output_dir, path)
+        if destination.exists():
+            print(f"Skipping transcript {path}: output already exists at {destination}")
+            return
+        result = await label_transcript(engine, engine.renderer, path, sampling_params, extract_answer)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        with destination.open("w", encoding="utf-8") as stream:
+            json.dump(result, stream, indent=2)
+            stream.write("\n")
 
     tasks = [asyncio.create_task(process(path)) for path in input_files]
     with tqdm(total=len(tasks), desc="Writing transcripts") as progress:
         for task in asyncio.as_completed(tasks):
-            input_path, result = await task
-            destination = output_path(args.root.resolve(), output_dir, input_path)
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            with destination.open("w", encoding="utf-8") as stream:
-                json.dump(result, stream, indent=2)
-                stream.write("\n")
+            await task
             progress.update(1)
 
 
