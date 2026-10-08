@@ -7,6 +7,7 @@ import json
 import re
 import sys
 import time
+import torch
 from pathlib import Path
 from uuid import uuid4
 
@@ -198,11 +199,13 @@ def output_path(root, output_dir, input_path):
 
 
 async def run(args, input_files, output_dir):
+    tensor_parallel_size = args.tensor_parallel_size
     engine_args = AsyncEngineArgs(
         model=args.model,
         max_model_len=args.max_model_len,
         max_num_seqs=args.max_num_seqs,
         gpu_memory_utilization=args.gpu_memory_utilization,
+        tensor_parallel_size=tensor_parallel_size
     )
     engine = AsyncLLMEngine.from_engine_args(engine_args)
     sampling_params = SamplingParams(
@@ -235,8 +238,10 @@ async def run(args, input_files, output_dir):
             n_transcribed += await task
             progress.update(1)
     duration += time.time()
-    print("n_transcribed", "duration", sep=',')
-    print(n_transcribed, duration, sep=',')
+
+    device_names = ' '.join(torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count()))
+    print("n_transcribed", "duration", "devices", "devices_used", sep=',')
+    print(n_transcribed, duration, device_names, tensor_parallel_size, sep=',')
 
 
 def main(raw_args=None):
@@ -252,6 +257,7 @@ def main(raw_args=None):
     parser.add_argument("--max-new-tokens", type=int, default=MAX_NEW_TOKENS)
     parser.add_argument("--max-num-seqs", type=int, default=1)
     parser.add_argument("--gpu-memory-utilization", type=float, default=0.95)
+    parser.add_argument("--tensor-parallel-size", type=int, default=torch.cuda.device_count())
     args = parser.parse_args(raw_args)
 
     if args.max_model_len < 1 or args.max_new_tokens < 1 or args.max_num_seqs < 1:
