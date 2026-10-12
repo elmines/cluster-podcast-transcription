@@ -9,7 +9,7 @@ import shlex
 import stat
 
 
-FILES_PER_HOUR = 250
+FILES_PER_HOUR = 150
 
 
 def shell_quote(value):
