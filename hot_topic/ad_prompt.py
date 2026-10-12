@@ -64,6 +64,20 @@ Use the supplied line indices exactly. If there is no advertising, return {"span
 TRANSCRIPT:
 """
 
+_SPAN_FIELDS = (
+    r'(?=[^{}]*"start"\s*:\s*(?P<start>\d+))'
+    r'(?=[^{}]*"end"\s*:\s*(?P<end>\d+))'
+    r'(?=[^{}]*"reason"\s*:\s*"(?P<reason>(?:\\.|[^"\\])*?)")'
+)
+_SPAN_PATTERN = re.compile(r"\{" + _SPAN_FIELDS + r"[^{}]*\}")
+_ORPHAN_SPAN_PATTERN = re.compile(
+    r"\{"
+    r'(?=[^{}]*"start"\s*:\s*(?P<start>\d+))'
+    r'(?=[^{}]*"end"\s*:\s*(?P<end>\d+))'
+    r'(?=[^{}]*"reason"\s*:\s*"(?P<reason>(?:\\.|[^"\\])*?)")?'
+    r"[^{}]*$"
+)
+
 
 def read_transcript(path):
     with path.open(newline="", encoding="utf-8") as source:
@@ -94,6 +108,30 @@ def extract_json_object(text, path, extract_answer):
             continue
         if isinstance(value, dict) and "spans" in value:
             return value
+
+    spans = [
+        {
+            "start": int(match.group("start")),
+            "end": int(match.group("end")),
+            "reason": json.loads(f'"{match.group("reason")}"'),
+        }
+        for match in _SPAN_PATTERN.finditer(text)
+    ]
+
+    orphan_match = _ORPHAN_SPAN_PATTERN.search(text)
+    if orphan_match:
+        spans.append({
+            "start": int(orphan_match.group("start")),
+            "end": int(orphan_match.group("end")),
+            "reason": (
+                json.loads(f'"{orphan_match.group("reason")}"')
+                if orphan_match.group("reason") is not None
+                else ""
+            ),
+        })
+    if spans:
+        return {"spans": spans}
+
     warning(path, f"LLM response did not contain a spans JSON object: {text[:500]!r}")
     return {"spans": []}
 
