@@ -29,6 +29,15 @@ class ExtractJsonObjectTests(unittest.TestCase):
             "spans": [{"start": 2, "end": 4, "reason": "sponsor"}],
         })
 
+    def test_falls_back_to_a_complete_span_without_a_reason(self):
+        response = 'model output {"end": 4, "start": 2}'
+
+        payload = extract_json_object(response, Path("response.txt"), lambda text: text)
+
+        self.assertEqual(payload, {
+            "spans": [{"start": 2, "end": 4, "reason": ""}],
+        })
+
     def test_allows_an_incomplete_final_span_without_a_reason(self):
         response = 'model output {"end": 4, "start": 2'
 

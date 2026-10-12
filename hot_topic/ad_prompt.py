@@ -67,7 +67,7 @@ TRANSCRIPT:
 _SPAN_FIELDS = (
     r'(?=[^{}]*"start"\s*:\s*(?P<start>\d+))'
     r'(?=[^{}]*"end"\s*:\s*(?P<end>\d+))'
-    r'(?=[^{}]*"reason"\s*:\s*"(?P<reason>(?:\\.|[^"\\])*?)")'
+    r'(?=[^{}]*"reason"\s*:\s*"(?P<reason>(?:\\.|[^"\\])*?)")?'
 )
 _SPAN_PATTERN = re.compile(r"\{" + _SPAN_FIELDS + r"[^{}]*\}")
 _ORPHAN_SPAN_PATTERN = re.compile(
@@ -113,7 +113,11 @@ def extract_json_object(text, path, extract_answer):
         {
             "start": int(match.group("start")),
             "end": int(match.group("end")),
-            "reason": json.loads(f'"{match.group("reason")}"'),
+            "reason": (
+                json.loads(f'"{match.group("reason")}"')
+                if match.group("reason") is not None
+                else ""
+            ),
         }
         for match in _SPAN_PATTERN.finditer(text)
     ]
