@@ -76,8 +76,8 @@ def read_transcript(path):
     return rows
 
 
-def format_transcript(rows, offset=0):
-    return "\n".join(f"[{offset + index}] {row['text'].strip()}" for index, row in enumerate(rows))
+def format_transcript(rows):
+    return "\n".join(f"[{index}] {row['text'].strip()}" for index, row in enumerate(rows))
 
 
 def warning(path, message):
@@ -103,8 +103,8 @@ def validate_spans(payload, line_count, offset, path):
         warning(path, "LLM response must contain a spans array")
         return []
     validated = []
-    lower = offset
-    upper = offset + line_count
+    lower = 0
+    upper = line_count
     for span in payload["spans"]:
         if not isinstance(span, dict) or not isinstance(span.get("start"), int) or not isinstance(span.get("end"), int):
             warning(path, f"Malformed span: {span!r}")
@@ -113,7 +113,7 @@ def validate_spans(payload, line_count, offset, path):
         if not lower <= start < end <= upper:
             warning(path, f"Span {span!r} is outside half-open line range [{lower}, {upper})")
             continue
-        validated.append({"start": start, "end": end, "reason": str(span.get("reason", ""))})
+        validated.append({"start": start + offset, "end": end + offset, "reason": str(span.get("reason", ""))})
     return validated
 
 
@@ -133,7 +133,7 @@ def render_chunk(renderer, offset, chunk):
     return renderer.render_chat(
         [[
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": USER_PROMPT + format_transcript(chunk, offset)},
+            {"role": "user", "content": USER_PROMPT + format_transcript(chunk)},
         ]],
         ChatParams(chat_template_kwargs={"add_generation_prompt": True}),
     )[1][0]
