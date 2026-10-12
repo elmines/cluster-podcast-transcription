@@ -76,6 +76,7 @@ def build_script(repo_dir, root, output, duration, partition, email, input_paths
             shell_quote(root),
             "--output",
             shell_quote(output),
+            "--max-num-seqs", "16",
             "-i",
             *(shell_quote(path) for path in input_paths),
         ]
