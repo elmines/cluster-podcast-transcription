@@ -3,10 +3,12 @@
 import argparse
 import csv
 import json
+from multiprocessing import Pool, cpu_count
 from pathlib import Path
 
 import numpy as np
 import plotly.graph_objects as go
+from tqdm import tqdm
 
 
 def read_transcript(path):
@@ -137,6 +139,14 @@ def plot_ad_spans(transcript_csv, labels, timestamp_unit="auto"):
 	return figure
 
 
+def write_ad_plot(task):
+	transcript_path, span_path, output_path = task
+	figure = plot_ad_spans(transcript_path, span_path)
+	output_path.parent.mkdir(parents=True, exist_ok=True)
+	figure.write_html(output_path)
+	return output_path
+
+
 def main(raw_args=None):
 	parser = argparse.ArgumentParser(description="Plot advertising spans over transcript timelines")
 	parser.add_argument("--data", default=Path("out/whisper_segmented"), type=Path,
@@ -147,7 +157,11 @@ def main(raw_args=None):
 						help="Directory for generated HTML plots")
 	parser.add_argument("--skip-finished", action="store_true",
 						help="Skip plots whose output HTML file already exists")
+	parser.add_argument("--num-workers", type=int, default=max(1, cpu_count() - 1),
+						help="Worker processes used to generate plots")
 	args = parser.parse_args(raw_args)
+	if args.num_workers < 1:
+		parser.error("--num-workers must be positive")
 
 	data_root = args.data.resolve()
 	spans_root = args.spans.resolve()
@@ -157,6 +171,7 @@ def main(raw_args=None):
 	if not spans_root.is_dir():
 		parser.error(f"--spans is not a directory: {spans_root}")
 
+	tasks = []
 	for transcript_path in sorted(data_root.glob("**/*.csv")):
 		relative_path = transcript_path.relative_to(data_root)
 		span_path = spans_root / relative_path.with_suffix(".json")
@@ -166,9 +181,15 @@ def main(raw_args=None):
 			continue
 		if args.skip_finished and output_path.exists():
 			continue
-		figure = plot_ad_spans(transcript_path, span_path)
-		output_path.parent.mkdir(parents=True, exist_ok=True)
-		figure.write_html(output_path)
+		tasks.append((transcript_path, span_path, output_path))
+
+	with Pool(args.num_workers) as pool:
+		for output_path in tqdm(
+			pool.imap_unordered(write_ad_plot, tasks),
+			total=len(tasks),
+			desc="Writing advertising plots",
+		):
+			print(f"Wrote {output_path}")
 
 
 if __name__ == "__main__":
