@@ -9,7 +9,10 @@ import shlex
 import stat
 
 
-FILES_PER_HOUR = 150
+# Recent N-worker set of jobs
+# took 5 hours a piece for 1615+ transcripts each
+FILES_PER_HOUR = 1615 / 5.5
+# 150
 
 
 def shell_quote(value):
@@ -93,7 +96,7 @@ def build_script(repo_dir, root, output, duration, partition, email, input_paths
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --gres=gpu:1
-#SBATCH --mem=48gb
+#SBATCH --mem=16gb
 #SBATCH --mail-user={shell_quote(email)}
 #SBATCH --mail-type=BEGIN,FAIL,END
 #SBATCH --output=%x.%j.out
