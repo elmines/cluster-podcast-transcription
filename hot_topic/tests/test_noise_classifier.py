@@ -1,16 +1,18 @@
 import csv
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
 import numpy as np
 
-from hot_topic.false_positives import (
+from hot_topic.bert_ad_spans import (
+    input_paths,
     length_sort_indices,
-    original_fields,
-    select_false_positives,
-    sort_by_confidence,
-    write_false_positives,
+    output_path,
+    predicted_spans,
+    read_rows,
+    result_for_rows,
 )
 from hot_topic.silver_label import SOURCE_FIELD, is_noise, main as silver_main
 from hot_topic.train_classifier import class_balanced_split, class_counts
@@ -22,7 +24,7 @@ class SilverLabelTests(unittest.TestCase):
         self.assertTrue(is_noise(" [MUSIC]"))
         self.assertTrue(is_noise(" Shop at example.com today"))
         self.assertFalse(is_noise(" Hello, welcome to the show."))
-        self.assertFalse(is_noise(" [Music]"))
+        self.assertTrue(is_noise(" [Music]"))
 
     def test_labels_every_line_and_mirrors_the_transcript_tree(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -72,7 +74,7 @@ class ClassBalancedSplitTests(unittest.TestCase):
         np.testing.assert_array_equal(val_idx, again_val)
 
 
-class FalsePositiveTests(unittest.TestCase):
+class BertAdSpanTests(unittest.TestCase):
     def test_sorts_lines_by_descending_token_length_before_batching(self):
         samples = [
             {"input_ids": [1]},
@@ -84,42 +86,81 @@ class FalsePositiveTests(unittest.TestCase):
         order = length_sort_indices(samples)
         lengths = [len(samples[index]["input_ids"]) for index in order]
         self.assertEqual(lengths, [8, 5, 3, 2, 1])
-    def test_keeps_model_noise_predictions_the_silver_labels_missed_highest_confidence_first(self):
+    def test_merges_consecutive_predictions_and_keeps_single_lines(self):
         rows = [
-            {"start": "0", "end": "1", "text": "plain", "noise": "0", "source_csv": "a.csv"},
-            {"start": "1", "end": "2", "text": "known ad", "noise": "1", "source_csv": "a.csv"},
-            {"start": "2", "end": "3", "text": "maybe ad", "noise": "0", "source_csv": "b.csv"},
-            {"start": "3", "end": "4", "text": "likely ad", "noise": "0", "source_csv": "b.csv"},
+            {"noise": "0"},
+            {"noise": "1"},
+            {"noise": "0"},
+            {"noise": "0"},
+            {"noise": "1"},
         ]
-        chosen = select_false_positives(
-            rows,
-            probabilities=[0.9, 0.99, 0.6, 0.8],
-            predictions=[0, 1, 1, 1],
-            positive_index=1,
+        self.assertEqual(
+            predicted_spans(rows, [0, 1, 1, 1, 0], positive_index=1),
+            [{"start": 1, "end": 4}],
         )
-        sort_by_confidence(chosen)
-        self.assertEqual([row["text"] for row in chosen], ["likely ad", "maybe ad"])
-        self.assertEqual([row["confidence"] for row in chosen], [0.8, 0.6])
 
-    def test_csv_keeps_original_columns_source_path_and_confidence(self):
-        fields = original_fields(["source_csv", "start", "end", "text", "noise"])
-        self.assertEqual(fields, ["start", "end", "text"])
+    def test_false_positive_mode_excludes_silver_noise(self):
+        rows = [
+            {"noise": "0"},
+            {"noise": "1"},
+            {"noise": "0"},
+            {"noise": "0"},
+        ]
+        self.assertEqual(
+            predicted_spans(
+                rows,
+                [1, 1, 1, 0],
+                positive_index=1,
+                false_positives=True,
+            ),
+            [{"start": 0, "end": 1}, {"start": 2, "end": 3}],
+        )
+
+    def test_output_path_mirrors_nested_input_tree_and_result_is_json_ready(self):
+        root = Path("/data/silver_labels")
+        input_path = root / "show" / "episode.csv"
+        rows = [{"noise": "0", "source_csv": "/data/raw/episode.csv"}]
+        result = result_for_rows(rows, [1], positive_index=1, false_positives=False)
+
+        self.assertEqual(output_path(root, Path("/data/bert_ad_spans"), input_path),
+                         Path("/data/bert_ad_spans/show/episode.json"))
+        self.assertEqual(json.loads(json.dumps(result)), {
+            "source": "/data/raw/episode.csv",
+            "line_count": 1,
+            "spans": [{"start": 0, "end": 1}],
+        })
+
+    def test_input_paths_accepts_files_nested_under_root(self):
         with tempfile.TemporaryDirectory() as tmp:
-            output = Path(tmp) / "fp.csv"
-            write_false_positives(output, [{
-                "start": "5",
-                "end": "9",
-                "text": "new sponsor line",
-                "source_csv": "/data/show/episode.csv",
-                "noise": 0,
-                "confidence": 0.9123456,
-            }], fields)
-            with output.open(newline="") as handle:
-                rows = list(csv.DictReader(handle))
-        self.assertEqual(list(rows[0]), ["start", "end", "text", "source_csv", "noise", "confidence"])
-        self.assertEqual(rows[0]["text"], "new sponsor line")
-        self.assertEqual(rows[0]["source_csv"], "/data/show/episode.csv")
-        self.assertEqual(rows[0]["confidence"], "0.912346")
+            root = Path(tmp) / "silver_labels"
+            input_path = root / "show" / "episode.csv"
+            input_path.parent.mkdir(parents=True)
+            input_path.touch()
+
+            self.assertEqual(input_paths(root, [input_path]), [input_path.resolve()])
+
+    def test_default_mode_only_requires_text_and_uses_input_path_as_source(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_path = Path(tmp) / "episode.csv"
+            input_path.write_text("text\nAn ad line\n")
+
+            rows, fields = read_rows(input_path)
+
+            self.assertEqual(fields, ["text"])
+            self.assertEqual(rows, [{"text": "An ad line"}])
+            self.assertEqual(
+                result_for_rows(rows, [1], positive_index=1, false_positives=False,
+                                 source_path=input_path)["source"],
+                str(input_path),
+            )
+
+    def test_false_positive_mode_requires_noise_and_source_columns(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_path = Path(tmp) / "episode.csv"
+            input_path.write_text("text\nAn ad line\n")
+
+            with self.assertRaisesRegex(ValueError, "noise.*source_csv"):
+                read_rows(input_path, false_positives=True)
 
 
 if __name__ == "__main__":

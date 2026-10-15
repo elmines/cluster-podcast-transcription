@@ -37,7 +37,7 @@ def build_script(repo_dir, partition, email):
 		[
 			"uv run python -m hot_topic.silver_label",
 			"uv run python -m hot_topic.train_classifier",
-			"uv run python -m hot_topic.false_positives",
+			"uv run python -m hot_topic.bert_ad_spans",
 		]
 	)
 
