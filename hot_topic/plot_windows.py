@@ -83,7 +83,17 @@ def plot_ad_spans(transcript_csv, labels, timestamp_unit="auto"):
 	transcript_csv = Path(transcript_csv)
 	rows = read_transcript(transcript_csv)
 	if not rows:
-		raise ValueError(f"{transcript_csv} has no transcript lines")
+		figure = go.Figure()
+		figure.update_layout(
+			title=f"{transcript_csv.name}: advertising spans",
+			xaxis_title="Minutes into episode",
+			yaxis=dict(visible=False, range=[-1, 1]),
+			height=360,
+			template="plotly_white",
+			showlegend=False,
+			hovermode="closest",
+		)
+		return figure
 
 	starts, unit = timestamps_to_seconds([row["start"] for row in rows], timestamp_unit)
 	ends, _ = timestamps_to_seconds([row["end"] for row in rows], timestamp_unit)
